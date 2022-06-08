@@ -1,0 +1,153 @@
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: Cluster
+metadata:
+  name: "{{ .name }}"
+spec:
+  clusterNetwork:
+    services:
+      cidrBlocks: ["10.112.0.0/12"]
+    pods:
+      cidrBlocks: ["10.17.0.0/16"]
+  controlPlaneRef:
+    apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+    kind: KubeadmControlPlane
+    name: "{{ .name }}-cp"
+  infrastructureRef:
+    apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+    kind: KubridCluster
+    name: "{{ .name }}"
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: KubridCluster
+metadata:
+  name: "{{ .name }}"
+spec: {}
+---
+apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+kind: KubeadmControlPlane
+metadata:
+  name: "{{ .name }}-cp"
+spec:
+  replicas: 3
+  version: 1.24.0
+  machineTemplate:
+    infrastructureRef:
+      apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+      kind: KubridMachineTemplate
+      name: "{{ .name }}-cp"
+  kubeadmConfigSpec:
+    initConfiguration:
+      nodeRegistration:
+        kubeletExtraArgs:
+          provider-id: "{{`kubrid://{{ ds.meta_data.instance_id }}`}}"
+        ignorePreflightErrors:
+          - SystemVerification
+    joinConfiguration:
+      nodeRegistration:
+        kubeletExtraArgs:
+          provider-id: "{{`kubrid://{{ ds.meta_data.instance_id }}`}}"
+        ignorePreflightErrors:
+          - SystemVerification
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: KubridMachineTemplate
+metadata:
+  name: "{{ .name }}-cp"
+spec:
+  template:
+    spec:
+      vmSpec:
+        runPolicy: Once
+        readinessProbe:
+          httpGet:
+            scheme: HTTPS
+            port: 6443
+            path: /readyz
+        instance:
+          cpu:
+            sockets: 1
+            coresPerSocket: 2
+          memory:
+            size: 2Gi
+          kernel:
+            image: harbor.smartx.com/fengye87/capch-kernel-5.15.12
+            cmdline: console=ttyS0 root=/dev/vda rw
+          disks:
+            - name: rootfs
+          interfaces:
+            - name: pod
+        volumes:
+          - name: rootfs
+            containerRootfs:
+              image: harbor.smartx.com/fengye87/capch-rootfs-1.24.0
+              size: 4Gi
+        networks:
+          - name: pod
+            pod: {}
+---
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: MachineDeployment
+metadata:
+  name: "{{ .name }}-md"
+spec:
+  clusterName: "{{ .name }}"
+  replicas: 3
+  selector: {}
+  template:
+    spec:
+      clusterName: "{{ .name }}"
+      version: 1.24.0
+      bootstrap:
+        configRef:
+          apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
+          kind: KubeadmConfigTemplate
+          name: "{{ .name }}-md"
+      infrastructureRef:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+        kind: KubridMachineTemplate
+        name: "{{ .name }}-md"
+---
+apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
+kind: KubeadmConfigTemplate
+metadata:
+  name: "{{ .name }}-md"
+spec:
+  template:
+    spec:
+      joinConfiguration:
+        nodeRegistration:
+          kubeletExtraArgs:
+            provider-id: "{{`kubrid://{{ ds.meta_data.instance_id }}`}}"
+          ignorePreflightErrors:
+            - SystemVerification
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: KubridMachineTemplate
+metadata:
+  name: "{{ .name }}-md"
+spec:
+  template:
+    spec:
+      vmSpec:
+        runPolicy: Once
+        instance:
+          cpu:
+            sockets: 1
+            coresPerSocket: 2
+          memory:
+            size: 2Gi
+          kernel:
+            image: harbor.smartx.com/fengye87/capch-kernel-5.15.12
+            cmdline: console=ttyS0 root=/dev/vda rw
+          disks:
+            - name: rootfs
+          interfaces:
+            - name: pod
+        volumes:
+          - name: rootfs
+            containerRootfs:
+              image: harbor.smartx.com/fengye87/capch-rootfs-1.24.0
+              size: 4Gi
+        networks:
+          - name: pod
+            pod: {}
