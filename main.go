@@ -17,7 +17,7 @@ import (
 
 func main() {
 	rootCmd := &cobra.Command{
-		Use: "unkink",
+		Use: "knest",
 	}
 
 	clusterCreateCmd := &cobra.Command{
@@ -44,29 +44,29 @@ func main() {
 				crdName:      "certificates.cert-manager.io",
 				manifestName: "cert-manager.yaml",
 			}, {
-				crdName: "virtualmachines.kubrid.smartx.com",
+				crdName: "virtualmachines.virt.virtink.smartx.com",
 				requiredDeploymentKeys: []types.NamespacedName{{
 					Name:      "cert-manager-webhook",
 					Namespace: "cert-manager",
 				}},
-				manifestName: "kubrid.yaml",
+				manifestName: "virtink.yaml",
 			}, {
 				crdName:      "clusters.cluster.x-k8s.io",
 				manifestName: "cluster-api-components.yaml",
 			}, {
-				crdName:      "kubridclusters.infrastructure.cluster.x-k8s.io",
+				crdName:      "virtinkclusters.infrastructure.cluster.x-k8s.io",
 				manifestName: "capch.yaml",
 			}}
 
 			for _, component := range components {
-				output, err := exec.Command("kubectl", "get", "crd", component.crdName, "--ignore-not-found").CombinedOutput()
+				output, err := exec.Command("kubectl", "get", "crds", component.crdName, "--ignore-not-found").CombinedOutput()
 				if err != nil {
 					return fmt.Errorf("get CRD: %s", err)
 				}
 
 				if len(output) == 0 {
 					for _, k := range component.requiredDeploymentKeys {
-						if err := exec.Command("kubectl", "wait", "-n", k.Namespace, "deployment", k.Name, "--for=condition=Available", "--timeout=-1s").Run(); err != nil {
+						if err := exec.Command("kubectl", "wait", "-n", k.Namespace, "deployments", k.Name, "--for=condition=Available", "--timeout=-1s").Run(); err != nil {
 							return fmt.Errorf("wait for deployment: %s", err)
 						}
 					}
@@ -91,7 +91,7 @@ func main() {
 				Namespace: "capch-system",
 			}}
 			for _, k := range capiWebhookDeploymentKeys {
-				if err := exec.Command("kubectl", "wait", "-n", k.Namespace, "deployment", k.Name, "--for=condition=Available", "--timeout=-1s").Run(); err != nil {
+				if err := exec.Command("kubectl", "wait", "-n", k.Namespace, "deployments", k.Name, "--for=condition=Available", "--timeout=-1s").Run(); err != nil {
 					return fmt.Errorf("wait for deployment: %s", err)
 				}
 			}
@@ -100,7 +100,7 @@ func main() {
 				return fmt.Errorf("apply cluster template: %s", err)
 			}
 
-			if err := exec.Command("kubectl", "wait", "cluster", clusterName, "--for=condition=ControlPlaneInitialized", "--timeout=-1s").Run(); err != nil {
+			if err := exec.Command("kubectl", "wait", "clusters.cluster.x-k8s.io", clusterName, "--for=condition=ControlPlaneInitialized", "--timeout=-1s").Run(); err != nil {
 				return fmt.Errorf("wait for cluster: %s", err)
 			}
 

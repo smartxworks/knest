@@ -14,11 +14,11 @@ spec:
     name: "{{ .name }}-cp"
   infrastructureRef:
     apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
-    kind: KubridCluster
+    kind: VirTinkCluster
     name: "{{ .name }}"
 ---
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
-kind: KubridCluster
+kind: VirTinkCluster
 metadata:
   name: "{{ .name }}"
 spec: {}
@@ -33,24 +33,24 @@ spec:
   machineTemplate:
     infrastructureRef:
       apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
-      kind: KubridMachineTemplate
+      kind: VirTinkMachineTemplate
       name: "{{ .name }}-cp"
   kubeadmConfigSpec:
     initConfiguration:
       nodeRegistration:
         kubeletExtraArgs:
-          provider-id: "{{`kubrid://{{ ds.meta_data.instance_id }}`}}"
+          provider-id: "{{`virtink://{{ ds.meta_data.instance_id }}`}}"
         ignorePreflightErrors:
           - SystemVerification
     joinConfiguration:
       nodeRegistration:
         kubeletExtraArgs:
-          provider-id: "{{`kubrid://{{ ds.meta_data.instance_id }}`}}"
+          provider-id: "{{`virtink://{{ ds.meta_data.instance_id }}`}}"
         ignorePreflightErrors:
           - SystemVerification
 ---
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
-kind: KubridMachineTemplate
+kind: VirTinkMachineTemplate
 metadata:
   name: "{{ .name }}-cp"
 spec:
@@ -58,6 +58,9 @@ spec:
     spec:
       vmSpec:
         runPolicy: Once
+        resources:
+          requests:
+            memory: 2Gi
         readinessProbe:
           httpGet:
             scheme: HTTPS
@@ -70,7 +73,7 @@ spec:
           memory:
             size: 2Gi
           kernel:
-            image: harbor.smartx.com/fengye87/capch-kernel-5.15.12
+            image: smartxworks/capch-kernel-5.15.12
             cmdline: console=ttyS0 root=/dev/vda rw
           disks:
             - name: rootfs
@@ -79,7 +82,7 @@ spec:
         volumes:
           - name: rootfs
             containerRootfs:
-              image: harbor.smartx.com/fengye87/capch-rootfs-1.24.0
+              image: smartxworks/capch-rootfs-1.24.0
               size: 4Gi
         networks:
           - name: pod
@@ -104,7 +107,7 @@ spec:
           name: "{{ .name }}-md"
       infrastructureRef:
         apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
-        kind: KubridMachineTemplate
+        kind: VirTinkMachineTemplate
         name: "{{ .name }}-md"
 ---
 apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
@@ -117,12 +120,12 @@ spec:
       joinConfiguration:
         nodeRegistration:
           kubeletExtraArgs:
-            provider-id: "{{`kubrid://{{ ds.meta_data.instance_id }}`}}"
+            provider-id: "{{`virtink://{{ ds.meta_data.instance_id }}`}}"
           ignorePreflightErrors:
             - SystemVerification
 ---
 apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
-kind: KubridMachineTemplate
+kind: VirTinkMachineTemplate
 metadata:
   name: "{{ .name }}-md"
 spec:
@@ -130,6 +133,9 @@ spec:
     spec:
       vmSpec:
         runPolicy: Once
+        resources:
+          requests:
+            memory: 2Gi
         instance:
           cpu:
             sockets: 1
@@ -137,7 +143,7 @@ spec:
           memory:
             size: 2Gi
           kernel:
-            image: harbor.smartx.com/fengye87/capch-kernel-5.15.12
+            image: smartxworks/capch-kernel-5.15.12
             cmdline: console=ttyS0 root=/dev/vda rw
           disks:
             - name: rootfs
@@ -146,7 +152,7 @@ spec:
         volumes:
           - name: rootfs
             containerRootfs:
-              image: harbor.smartx.com/fengye87/capch-rootfs-1.24.0
+              image: smartxworks/capch-rootfs-1.24.0
               size: 4Gi
         networks:
           - name: pod
