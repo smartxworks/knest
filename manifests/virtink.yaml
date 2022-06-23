@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: kubrid-system
+  name: virtink-system
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
@@ -9,9 +9,9 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.9.0
   creationTimestamp: null
-  name: virtualmachines.kubrid.smartx.com
+  name: virtualmachines.virt.virtink.smartx.com
 spec:
-  group: kubrid.smartx.com
+  group: virt.virtink.smartx.com
   names:
     kind: VirtualMachine
     listKind: VirtualMachineList
@@ -1406,20 +1406,20 @@ spec:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: kubrid-controller
-  namespace: kubrid-system
+  name: virt-controller
+  namespace: virtink-system
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: kubrid-daemon
-  namespace: kubrid-system
+  name: virt-daemon
+  namespace: virtink-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   creationTimestamp: null
-  name: kubrid-controller
+  name: virt-controller
 rules:
 - apiGroups:
   - ""
@@ -1466,7 +1466,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - kubrid.smartx.com
+  - virt.virtink.smartx.com
   resources:
   - virtualmachines
   verbs:
@@ -1478,13 +1478,13 @@ rules:
   - update
   - watch
 - apiGroups:
-  - kubrid.smartx.com
+  - virt.virtink.smartx.com
   resources:
   - virtualmachines/finalizers
   verbs:
   - update
 - apiGroups:
-  - kubrid.smartx.com
+  - virt.virtink.smartx.com
   resources:
   - virtualmachines/status
   verbs:
@@ -1496,7 +1496,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   creationTimestamp: null
-  name: kubrid-daemon
+  name: virt-daemon
 rules:
 - apiGroups:
   - ""
@@ -1515,7 +1515,7 @@ rules:
   - list
   - watch
 - apiGroups:
-  - kubrid.smartx.com
+  - virt.virtink.smartx.com
   resources:
   - virtualmachines
   verbs:
@@ -1527,13 +1527,13 @@ rules:
   - update
   - watch
 - apiGroups:
-  - kubrid.smartx.com
+  - virt.virtink.smartx.com
   resources:
   - virtualmachines/finalizers
   verbs:
   - update
 - apiGroups:
-  - kubrid.smartx.com
+  - virt.virtink.smartx.com
   resources:
   - virtualmachines/status
   verbs:
@@ -1544,85 +1544,85 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: kubrid-controller
+  name: virt-controller
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: kubrid-controller
+  name: virt-controller
 subjects:
 - kind: ServiceAccount
-  name: kubrid-controller
-  namespace: kubrid-system
+  name: virt-controller
+  namespace: virtink-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: kubrid-daemon
+  name: virt-daemon
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: kubrid-daemon
+  name: virt-daemon
 subjects:
 - kind: ServiceAccount
-  name: kubrid-daemon
-  namespace: kubrid-system
+  name: virt-daemon
+  namespace: virtink-system
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: kubrid-controller
-  namespace: kubrid-system
+  name: virt-controller
+  namespace: virtink-system
 spec:
   ports:
   - port: 443
     targetPort: 9443
   selector:
-    name: kubrid-controller
+    name: virt-controller
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: kubrid-controller
-  namespace: kubrid-system
+  name: virt-controller
+  namespace: virtink-system
 spec:
   selector:
     matchLabels:
-      name: kubrid-controller
+      name: virt-controller
   template:
     metadata:
       labels:
-        name: kubrid-controller
+        name: virt-controller
     spec:
       containers:
       - args:
         - --zap-time-encoding=iso8601
         - --leader-elect
-        image: harbor.smartx.com/fengye87/kubrid-controller:0abf19c@sha256:bc39d5d20a88809ece4b50b930bc06e2f3f4628127b3f9f61435ca4ea14f92a5
-        name: kubrid-controller
+        image: smartxworks/virt-controller:v0.7.1@sha256:951b54a73a53c5eb006e7b57b93e9d5cde98b384ec9219cf301c76dd8f02ef21
+        name: virt-controller
         volumeMounts:
         - mountPath: /tmp/k8s-webhook-server/serving-certs
           name: cert
           readOnly: true
-      serviceAccountName: kubrid-controller
+      serviceAccountName: virt-controller
       volumes:
       - name: cert
         secret:
           defaultMode: 420
-          secretName: kubrid-controller-cert
+          secretName: virt-controller-cert
 ---
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: kubrid-daemon
-  namespace: kubrid-system
+  name: virt-daemon
+  namespace: virtink-system
 spec:
   selector:
     matchLabels:
-      name: kubrid-daemon
+      name: virt-daemon
   template:
     metadata:
       labels:
-        name: kubrid-daemon
+        name: virt-daemon
     spec:
       containers:
       - args:
@@ -1632,12 +1632,12 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: spec.nodeName
-        image: harbor.smartx.com/fengye87/kubrid-daemon:0abf19c@sha256:df226f1f17bcdfcffe762e5dcc3c3cc6e65a96e89667dd023c6e60376567ed93
-        name: kubrid-daemon
+        image: smartxworks/virt-daemon:v0.7.1@sha256:29b1794cb741e0ab70bb289b2ad6adf05ac42edd33e2149dd1ebe4e58a267ffa
+        name: virt-daemon
         volumeMounts:
         - mountPath: /var/lib/kubelet/pods
           name: kubelet-pods
-      serviceAccountName: kubrid-daemon
+      serviceAccountName: virt-daemon
       volumes:
       - hostPath:
           path: /var/lib/kubelet/pods
@@ -1646,22 +1646,22 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: kubrid-controller-cert
-  namespace: kubrid-system
+  name: virt-controller-cert
+  namespace: virtink-system
 spec:
   dnsNames:
-  - kubrid-controller.kubrid-system.svc
-  - kubrid-controller.kubrid-system.svc.cluster.local
+  - virt-controller.virtink-system.svc
+  - virt-controller.virtink-system.svc.cluster.local
   issuerRef:
     kind: Issuer
-    name: kubrid-controller-cert-issuer
-  secretName: kubrid-controller-cert
+    name: virt-controller-cert-issuer
+  secretName: virt-controller-cert
 ---
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name: kubrid-controller-cert-issuer
-  namespace: kubrid-system
+  name: virt-controller-cert-issuer
+  namespace: virtink-system
 spec:
   selfSigned: {}
 ---
@@ -1669,22 +1669,22 @@ apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
 metadata:
   annotations:
-    cert-manager.io/inject-ca-from: kubrid-system/kubrid-controller-cert
-  name: kubrid-mutating-webhook-configuration
+    cert-manager.io/inject-ca-from: virtink-system/virt-controller-cert
+  name: virtink-mutating-webhook-configuration
 webhooks:
 - admissionReviewVersions:
   - v1
   - v1beta1
   clientConfig:
     service:
-      name: kubrid-controller
-      namespace: kubrid-system
+      name: virt-controller
+      namespace: virtink-system
       path: /mutate-v1alpha1-virtualmachine
   failurePolicy: Fail
-  name: mutate.virtualmachine.v1alpha1.kubrid.smartx.com
+  name: mutate.virtualmachine.v1alpha1.virt.virtink.smartx.com
   rules:
   - apiGroups:
-    - kubrid.smartx.com
+    - virt.virtink.smartx.com
     apiVersions:
     - v1alpha1
     operations:
@@ -1698,22 +1698,22 @@ apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
 metadata:
   annotations:
-    cert-manager.io/inject-ca-from: kubrid-system/kubrid-controller-cert
-  name: kubrid-validating-webhook-configuration
+    cert-manager.io/inject-ca-from: virtink-system/virt-controller-cert
+  name: virtink-validating-webhook-configuration
 webhooks:
 - admissionReviewVersions:
   - v1
   - v1beta1
   clientConfig:
     service:
-      name: kubrid-controller
-      namespace: kubrid-system
+      name: virt-controller
+      namespace: virtink-system
       path: /validate-v1alpha1-virtualmachine
   failurePolicy: Fail
-  name: validate.virtualmachine.v1alpha1.kubrid.smartx.com
+  name: validate.virtualmachine.v1alpha1.virt.virtink.smartx.com
   rules:
   - apiGroups:
-    - kubrid.smartx.com
+    - virt.virtink.smartx.com
     apiVersions:
     - v1alpha1
     operations:

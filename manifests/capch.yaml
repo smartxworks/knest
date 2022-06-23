@@ -13,14 +13,14 @@ metadata:
   creationTimestamp: null
   labels:
     cluster.x-k8s.io/v1beta1: v1beta1
-  name: kubridclusters.infrastructure.cluster.x-k8s.io
+  name: virtinkclusters.infrastructure.cluster.x-k8s.io
 spec:
   group: infrastructure.cluster.x-k8s.io
   names:
-    kind: KubridCluster
-    listKind: KubridClusterList
-    plural: kubridclusters
-    singular: kubridcluster
+    kind: VirTinkCluster
+    listKind: VirTinkClusterList
+    plural: virtinkclusters
+    singular: virtinkcluster
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -36,7 +36,7 @@ spec:
     name: v1beta1
     schema:
       openAPIV3Schema:
-        description: KubridCluster is the Schema for the kubridclusters API
+        description: VirTinkCluster is the Schema for the virtinkclusters API
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -51,7 +51,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: KubridClusterSpec defines the desired state of KubridCluster
+            description: VirTinkClusterSpec defines the desired state of VirTinkCluster
             properties:
               controlPlaneEndpoint:
                 description: APIEndpoint represents a reachable Kubernetes API endpoint.
@@ -69,7 +69,7 @@ spec:
                 type: object
             type: object
           status:
-            description: KubridClusterStatus defines the observed state of KubridCluster
+            description: VirTinkClusterStatus defines the observed state of VirTinkCluster
             properties:
               ready:
                 type: boolean
@@ -94,14 +94,14 @@ metadata:
   creationTimestamp: null
   labels:
     cluster.x-k8s.io/v1beta1: v1beta1
-  name: kubridmachines.infrastructure.cluster.x-k8s.io
+  name: virtinkmachines.infrastructure.cluster.x-k8s.io
 spec:
   group: infrastructure.cluster.x-k8s.io
   names:
-    kind: KubridMachine
-    listKind: KubridMachineList
-    plural: kubridmachines
-    singular: kubridmachine
+    kind: VirTinkMachine
+    listKind: VirTinkMachineList
+    plural: virtinkmachines
+    singular: virtinkmachine
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -114,7 +114,7 @@ spec:
     name: v1beta1
     schema:
       openAPIV3Schema:
-        description: KubridMachine is the Schema for the kubridmachines API
+        description: VirTinkMachine is the Schema for the virtinkmachines API
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -129,7 +129,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: KubridMachineSpec defines the desired state of KubridMachine
+            description: VirTinkMachineSpec defines the desired state of VirTinkMachine
             properties:
               providerID:
                 type: string
@@ -1507,7 +1507,7 @@ spec:
             - vmSpec
             type: object
           status:
-            description: KubridMachineStatus defines the observed state of KubridMachine
+            description: VirTinkMachineStatus defines the observed state of VirTinkMachine
             properties:
               ready:
                 type: boolean
@@ -1532,20 +1532,20 @@ metadata:
   creationTimestamp: null
   labels:
     cluster.x-k8s.io/v1beta1: v1beta1
-  name: kubridmachinetemplates.infrastructure.cluster.x-k8s.io
+  name: virtinkmachinetemplates.infrastructure.cluster.x-k8s.io
 spec:
   group: infrastructure.cluster.x-k8s.io
   names:
-    kind: KubridMachineTemplate
-    listKind: KubridMachineTemplateList
-    plural: kubridmachinetemplates
-    singular: kubridmachinetemplate
+    kind: VirTinkMachineTemplate
+    listKind: VirTinkMachineTemplateList
+    plural: virtinkmachinetemplates
+    singular: virtinkmachinetemplate
   scope: Namespaced
   versions:
   - name: v1beta1
     schema:
       openAPIV3Schema:
-        description: KubridMachineTemplate is the Schema for the kubridmachinetemplates
+        description: VirTinkMachineTemplate is the Schema for the virtinkmachinetemplates
           API
         properties:
           apiVersion:
@@ -1561,7 +1561,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: KubridMachineTemplateSpec defines the desired state of KubridMachineTemplate
+            description: VirTinkMachineTemplateSpec defines the desired state of VirTinkMachineTemplate
             properties:
               template:
                 properties:
@@ -1569,7 +1569,7 @@ spec:
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
                   spec:
-                    description: KubridMachineSpec defines the desired state of KubridMachine
+                    description: VirTinkMachineSpec defines the desired state of VirTinkMachine
                     properties:
                       providerID:
                         type: string
@@ -3061,8 +3061,8 @@ spec:
             - template
             type: object
           status:
-            description: KubridMachineTemplateStatus defines the observed state of
-              KubridMachineTemplate
+            description: VirTinkMachineTemplateStatus defines the observed state of
+              VirTinkMachineTemplate
             type: object
         type: object
     served: true
@@ -3177,7 +3177,7 @@ rules:
 - apiGroups:
   - infrastructure.cluster.x-k8s.io
   resources:
-  - kubridclusters
+  - virtinkclusters
   verbs:
   - create
   - delete
@@ -3189,13 +3189,13 @@ rules:
 - apiGroups:
   - infrastructure.cluster.x-k8s.io
   resources:
-  - kubridclusters/finalizers
+  - virtinkclusters/finalizers
   verbs:
   - update
 - apiGroups:
   - infrastructure.cluster.x-k8s.io
   resources:
-  - kubridclusters/status
+  - virtinkclusters/status
   verbs:
   - get
   - patch
@@ -3203,7 +3203,7 @@ rules:
 - apiGroups:
   - infrastructure.cluster.x-k8s.io
   resources:
-  - kubridmachines
+  - virtinkmachines
   verbs:
   - create
   - delete
@@ -3215,19 +3215,19 @@ rules:
 - apiGroups:
   - infrastructure.cluster.x-k8s.io
   resources:
-  - kubridmachines/finalizers
+  - virtinkmachines/finalizers
   verbs:
   - update
 - apiGroups:
   - infrastructure.cluster.x-k8s.io
   resources:
-  - kubridmachines/status
+  - virtinkmachines/status
   verbs:
   - get
   - patch
   - update
 - apiGroups:
-  - kubrid.smartx.com
+  - virt.virtink.smartx.com
   resources:
   - virtualmachines
   verbs:
@@ -3387,7 +3387,7 @@ spec:
         - --zap-time-encoding=iso8601
         command:
         - /manager
-        image: harbor.smartx.com/fengye87/capch-controller:17d561a@sha256:7d387e142b80bb9c6bca06726c1d556ec24c332e1a9a1c7455bcbef610cb911a
+        image: smartxworks/capch-controller:v0.1.0@sha256:1ca2adefe687bf3cbd89dc166d11ec87a6dce65379244dd41e8b5ded3525f2da
         livenessProbe:
           httpGet:
             path: /healthz
