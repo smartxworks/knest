@@ -20,7 +20,7 @@ func main() {
 		Use: "knest",
 	}
 
-	clusterCreateCmd := &cobra.Command{
+	rootCmd.AddCommand(&cobra.Command{
 		Use:  "create CLUSTER",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -134,9 +134,19 @@ func main() {
 			}
 			return nil
 		},
-	}
+	})
 
-	rootCmd.AddCommand(clusterCreateCmd)
+	rootCmd.AddCommand(&cobra.Command{
+		Use:  "delete CLUSTER",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clusterName := args[0]
+			if err := deleteTemplate("cluster.yaml", map[string]interface{}{"name": clusterName}); err != nil {
+				return fmt.Errorf("delete cluster template: %s", err)
+			}
+			return nil
+		},
+	})
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -178,7 +188,15 @@ func applyManifest(name string) error {
 var templates embed.FS
 
 func applyTemplate(name string, data interface{}) error {
-	cmd := exec.Command("kubectl", "apply", "-f", "-")
+	return kubectlTemplate("apply", name, data)
+}
+
+func deleteTemplate(name string, data interface{}) error {
+	return kubectlTemplate("delete", name, data)
+}
+
+func kubectlTemplate(action string, name string, data interface{}) error {
+	cmd := exec.Command("kubectl", action, "-f", "-")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
