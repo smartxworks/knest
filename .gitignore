@@ -1,4 +1,4 @@
-knest
+out
 *.kubeconfig
 
 # Binaries for programs and plugins
