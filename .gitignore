@@ -1,5 +1,6 @@
 out
 *.kubeconfig
+generated-cluster*.yaml
 
 # Binaries for programs and plugins
 *.exe
