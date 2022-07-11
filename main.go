@@ -46,6 +46,16 @@ var createClusterOpts = &createClusterOptions{
 	virtinkMachineRootfsSize:  resource.QuantityValue{Quantity: resource.MustParse("4Gi")},
 }
 
+type scaleClusterOptions struct {
+	nodeRole     string
+	nodeReplicas int
+}
+
+var scaleClusterOpts = &scaleClusterOptions{
+	nodeRole:     "all",
+	nodeReplicas: 3,
+}
+
 func main() {
 	rootCmd := &cobra.Command{
 		Use: "knest",
@@ -93,6 +103,43 @@ func main() {
 			return nil
 		},
 	})
+
+	scale := &cobra.Command{
+		Use:   "scale CLUSTER",
+		Args:  cobra.ExactArgs(1),
+		Short: "Scale workload cluster.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clusterName := args[0]
+			isControlPlane := false
+			isWorker := false
+			switch scaleClusterOpts.nodeRole {
+			case "all":
+				isControlPlane = true
+				isWorker = true
+			case "control-plane":
+				isControlPlane = true
+			case "worker":
+				isWorker = true
+			default:
+				return fmt.Errorf("unkown role of Node: '%s'", scaleClusterOpts.nodeRole)
+			}
+			if isControlPlane {
+				if err := runCommandPiped("kubectl", "patch", "kubeadmcontrolplane.controlplane.cluster.x-k8s.io", fmt.Sprintf("%s-cp", clusterName), fmt.Sprintf("--patch={\"spec\":{\"replicas\":%v}}", scaleClusterOpts.nodeReplicas), "--type=merge"); err != nil {
+					return fmt.Errorf("scale control-plane: %s", err)
+				}
+			}
+			if isWorker {
+				if err := runCommandPiped("kubectl", "patch", "machinedeployment.cluster.x-k8s.io", fmt.Sprintf("%s-md", clusterName), fmt.Sprintf("--patch={\"spec\":{\"replicas\":%v}}", scaleClusterOpts.nodeReplicas), "--type=merge"); err != nil {
+					return fmt.Errorf("scale worker: %s", err)
+				}
+			}
+			return nil
+		},
+	}
+	scale.Flags().IntVar(&scaleClusterOpts.nodeReplicas, "node-replicas", scaleClusterOpts.nodeReplicas, "Desired number of Node replicas")
+	scale.Flags().StringVar(&scaleClusterOpts.nodeRole, "node-role", scaleClusterOpts.nodeRole, "Role of Node (options: \"control-plane\", \"worker\", \"all\")")
+	rootCmd.AddCommand(scale)
+
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
