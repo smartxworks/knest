@@ -252,6 +252,8 @@ func createCluster(cmd *cobra.Command, args []string) error {
 	generateClusterArgs := []string{"generate", "cluster", createClusterOpts.clusterName}
 	if createClusterOpts.from != "" {
 		generateClusterArgs = append(generateClusterArgs, "--from", createClusterOpts.from)
+	} else {
+		generateClusterArgs = append(generateClusterArgs, "--flavor", "mhc")
 	}
 
 	clusterData, err := runCommandWithEnvs("clusterctl", generateClusterCmdEnvs, generateClusterArgs...)
