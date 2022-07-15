@@ -7,138 +7,224 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
-	clusterctlv1 "sigs.k8s.io/cluster-api/cmd/clusterctl/api/v1alpha3"
 )
 
-type createClusterOptions struct {
-	clusterName               string
-	from                      string
-	kubernetesVersion         string
-	controlPlaneMachineCount  int
-	workerMachineCount        int
-	virtinkPodNetworkCIDR     string
-	virtinkServiceCIDR        string
-	virtinkMachineCPUCount    int
-	virtinkMachineMemorySize  resource.QuantityValue
-	virtinkMachineKernelImage string
-	virtinkMachineRootfsImage string
-	virtinkMachineRootfsSize  resource.QuantityValue
-}
-
-var createClusterOpts = &createClusterOptions{
-	kubernetesVersion:         "v1.24.0",
-	controlPlaneMachineCount:  3,
-	workerMachineCount:        3,
-	virtinkPodNetworkCIDR:     "10.17.0.0/16",
-	virtinkServiceCIDR:        "10.112.0.0/12",
-	virtinkMachineCPUCount:    2,
-	virtinkMachineMemorySize:  resource.QuantityValue{Quantity: resource.MustParse("2Gi")},
-	virtinkMachineKernelImage: "smartxworks/capch-kernel-5.15.12",
-	virtinkMachineRootfsImage: "smartxworks/capch-rootfs-1.24.0",
-	virtinkMachineRootfsSize:  resource.QuantityValue{Quantity: resource.MustParse("4Gi")},
-}
-
-type scaleClusterOptions struct {
-	nodeRole     string
-	nodeReplicas int
-}
-
-var scaleClusterOpts = &scaleClusterOptions{
-	nodeRole:     "all",
-	nodeReplicas: 3,
-}
+const (
+	VirtinkVersion         = "v0.8.0"
+	VirtinkProviderVersion = "v0.3.0"
+)
 
 func main() {
+	var (
+		kubernetesVersion              = "1.24.0"
+		controlPlaneMachineCount       = 1
+		workerMachineCount             = 1
+		podNetworkCIDR                 = "192.168.0.0/16"
+		serviceCIDR                    = "10.96.0.0/12"
+		controlPlaneMachineCPUCores    = 2
+		controlPlaneMachineMemorySize  = resource.QuantityValue{Quantity: resource.MustParse("4Gi")}
+		controlPlaneMachineKernelImage = "smartxworks/capch-kernel-5.15.12"
+		controlPlaneMachineRootfsImage = "smartxworks/capch-rootfs-1.24.0"
+		controlPlaneMachineRootfsSize  = resource.QuantityValue{Quantity: resource.MustParse("4Gi")}
+		workerMachineCPUCores          = 2
+		workerMachineMemorySize        = resource.QuantityValue{Quantity: resource.MustParse("4Gi")}
+		workerMachineKernelImage       = "smartxworks/capch-kernel-5.15.12"
+		workerMachineRootfsImage       = "smartxworks/capch-rootfs-1.24.0"
+		workerMachineRootfsSize        = resource.QuantityValue{Quantity: resource.MustParse("4Gi")}
+	)
+
+	cmdCreate := &cobra.Command{
+		Use:   "create CLUSTER",
+		Args:  cobra.ExactArgs(1),
+		Short: "Create a nested Kubernetes cluster.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := setupClusterctlConfig(); err != nil {
+				return fmt.Errorf("setup clusterctl config: %s", err)
+			}
+
+			capchCRDOutput, err := getCommandOutput(exec.Command("kubectl", "get", "crd", "virtinkclusters.infrastructure.cluster.x-k8s.io", "--ignore-not-found"))
+			if err != nil {
+				return fmt.Errorf("get Cluster API CRDs: %s", err)
+			}
+			if len(capchCRDOutput) == 0 {
+				fmt.Println("Installing Cluster API providers")
+				if err := runCommand(exec.Command("clusterctl", "init", "--infrastructure", fmt.Sprintf("virtink:%s", VirtinkProviderVersion), "--wait-providers")); err != nil {
+					return fmt.Errorf("install Cluster API providers: %s", err)
+				}
+			}
+
+			virtinkCRDOutput, err := getCommandOutput(exec.Command("kubectl", "get", "crd", "virtualmachines.virt.virtink.smartx.com", "--ignore-not-found"))
+			if err != nil {
+				return fmt.Errorf("get Cluster API CRDs: %s", err)
+			}
+			if len(virtinkCRDOutput) == 0 {
+				fmt.Println("Installing Virtink")
+				if err := runCommand(exec.Command("kubectl", "apply", "-f", fmt.Sprintf("https://github.com/smartxworks/virtink/releases/download/%s/virtink.yaml", VirtinkVersion))); err != nil {
+					return fmt.Errorf("install Virtink: %s", err)
+				}
+
+				fmt.Println("Waiting for Virtink to be available...")
+				if err := runCommand(exec.Command("kubectl", "wait", "-n", "virtink-system", "deployment", "virt-controller", "--for", "condition=Available", "--timeout", "-1s")); err != nil {
+					return fmt.Errorf("wait for Virtink to be available: %s", err)
+				}
+			}
+
+			generateCmd := exec.Command("clusterctl", "generate", "cluster", args[0],
+				"--infrastructure", fmt.Sprintf("virtink:%s", VirtinkProviderVersion), "--flavor", "internal",
+				"--kubernetes-version", kubernetesVersion,
+				"--control-plane-machine-count", strconv.Itoa(controlPlaneMachineCount),
+				"--worker-machine-count", strconv.Itoa(workerMachineCount))
+			generateCmd.Env = append(os.Environ(),
+				fmt.Sprintf("POD_NETWORK_CIDR=%s", podNetworkCIDR),
+				fmt.Sprintf("SERVICE_CIDR=%s", serviceCIDR),
+				"VIRTINK_CONTROL_PLANE_SERVICE_TYPE=NodePort",
+				fmt.Sprintf("VIRTINK_CONTROL_PLANE_MACHINE_CPU_CORES=%d", controlPlaneMachineCPUCores),
+				fmt.Sprintf("VIRTINK_CONTROL_PLANE_MACHINE_MEMORY_SIZE=%s", controlPlaneMachineMemorySize.String()),
+				fmt.Sprintf("VIRTINK_CONTROL_PLANE_MACHINE_KERNEL_IMAGE=%s", controlPlaneMachineKernelImage),
+				fmt.Sprintf("VIRTINK_CONTROL_PLANE_MACHINE_ROOTFS_IMAGE=%s", controlPlaneMachineRootfsImage),
+				fmt.Sprintf("VIRTINK_WORKER_MACHINE_ROOTFS_SIZE=%s", workerMachineRootfsSize.String()),
+				fmt.Sprintf("VIRTINK_WORKER_MACHINE_CPU_CORES=%d", workerMachineCPUCores),
+				fmt.Sprintf("VIRTINK_WORKER_MACHINE_MEMORY_SIZE=%s", workerMachineMemorySize.String()),
+				fmt.Sprintf("VIRTINK_WORKER_MACHINE_KERNEL_IMAGE=%s", workerMachineKernelImage),
+				fmt.Sprintf("VIRTINK_WORKER_MACHINE_ROOTFS_IMAGE=%s", workerMachineRootfsImage),
+				fmt.Sprintf("VIRTINK_WORKER_MACHINE_ROOTFS_SIZE=%s", workerMachineRootfsSize.String()))
+			if err := pipeCommands(generateCmd, exec.Command("kubectl", "apply", "-f", "-")); err != nil {
+				return fmt.Errorf("create cluster resources: %s", err)
+			}
+
+			fmt.Println("Waiting for control plane to be initialized...")
+			if err := runCommand(exec.Command("kubectl", "wait", "clusters.cluster.x-k8s.io", args[0], "--for", "condition=ControlPlaneInitialized", "--timeout", "-1s")); err != nil {
+				return fmt.Errorf("wait for control plane to be initialized: %s", err)
+			}
+
+			// TODO: LB support
+			nodePort, err := getCommandOutput(exec.Command("kubectl", "get", "service", args[0], "-o", "jsonpath={.spec.ports[0].nodePort}"))
+			if err != nil {
+				return fmt.Errorf("get node port: %s", err)
+			}
+			clusterIP, err := getCommandOutput(exec.Command("kubectl", "get", "service", args[0], "-o", "jsonpath={.spec.clusterIP}"))
+			if err != nil {
+				return fmt.Errorf("get cluster IP: %s", err)
+			}
+
+			encodedKubeconfigData, err := getCommandOutput(exec.Command("kubectl", "get", "secret", fmt.Sprintf("%s-kubeconfig", args[0]), "-o", "jsonpath={.data.value}"))
+			if err != nil {
+				return fmt.Errorf("get kubeconfig: %s", err)
+			}
+			kubeconfigData, err := base64.StdEncoding.DecodeString(encodedKubeconfigData)
+			if err != nil {
+				return fmt.Errorf("decode kubeconfig: %s", err)
+			}
+
+			kubeconfigFilePath := filepath.Join(homedir.HomeDir(), ".kube", fmt.Sprintf("knest.%s.kubeconfig", args[0]))
+			if err := os.WriteFile(kubeconfigFilePath, kubeconfigData, 0644); err != nil {
+				return fmt.Errorf("save kubeconfig: %s", err)
+			}
+
+			infraKubeconfig, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(clientcmd.NewDefaultClientConfigLoadingRules(), nil).ClientConfig()
+			if err != nil {
+				return fmt.Errorf("load infra kubeconfig: %s", err)
+			}
+			infraHost, err := url.Parse(infraKubeconfig.Host)
+			if err != nil {
+				return fmt.Errorf("parse infra host: %s", err)
+			}
+
+			if err := runCommand(exec.Command("kubectl", "config", "--kubeconfig", kubeconfigFilePath, "set-cluster", args[0],
+				"--server", fmt.Sprintf("%s://%s:%s", infraHost.Scheme, infraHost.Hostname(), nodePort),
+				"--tls-server-name", clusterIP)); err != nil {
+				return fmt.Errorf("update kubeconfig: %s", err)
+			}
+
+			fmt.Printf("Your cluster %q is now accessible with the kubeconfig file %q\n", args[0], kubeconfigFilePath)
+			return nil
+		},
+	}
+
+	cmdCreate.PersistentFlags().StringVar(&kubernetesVersion, "kubernetes-version", kubernetesVersion, "The Kubernetes version to use for the nested cluster.")
+	cmdCreate.PersistentFlags().IntVar(&controlPlaneMachineCount, "control-plane-machine-count", controlPlaneMachineCount, "The number of control plane machines for the nested cluster.")
+	cmdCreate.PersistentFlags().IntVar(&workerMachineCount, "worker-machine-count", workerMachineCount, "The number of worker machines for the nested cluster.")
+	cmdCreate.PersistentFlags().StringVar(&podNetworkCIDR, "pod-network-cidr", podNetworkCIDR, "Specify range of IP addresses for the pod network.")
+	cmdCreate.PersistentFlags().StringVar(&serviceCIDR, "service-cidr", serviceCIDR, "Specify range of IP address for service VIPs.")
+	cmdCreate.PersistentFlags().IntVar(&controlPlaneMachineCPUCores, "control-plane-machine-cpu-cores", controlPlaneMachineCPUCores, "The CPU cores of each control plane machine.")
+	cmdCreate.PersistentFlags().Var(&controlPlaneMachineMemorySize, "control-plane-machine-memory-size", "The memory size of each control plane machine")
+	cmdCreate.PersistentFlags().StringVar(&controlPlaneMachineKernelImage, "control-plane-machine-kernel-image", controlPlaneMachineKernelImage, "The kernel image of control plane machine")
+	cmdCreate.PersistentFlags().StringVar(&controlPlaneMachineRootfsImage, "control-plane-machine-rootfs-image", controlPlaneMachineRootfsImage, "The rootfs image of control plane machine")
+	cmdCreate.PersistentFlags().Var(&controlPlaneMachineRootfsSize, "control-plane-machine-rootfs-size", "The rootfs size of each control plane machine")
+	cmdCreate.PersistentFlags().IntVar(&workerMachineCPUCores, "worker-machine-cpu-cores", workerMachineCPUCores, "The CPU cores of each worker machine.")
+	cmdCreate.PersistentFlags().Var(&workerMachineMemorySize, "worker-machine-memory-size", "The memory size of each worker machine")
+	cmdCreate.PersistentFlags().StringVar(&workerMachineKernelImage, "worker-machine-kernel-image", workerMachineKernelImage, "The kernel image of worker machine")
+	cmdCreate.PersistentFlags().StringVar(&workerMachineRootfsImage, "worker-machine-rootfs-image", workerMachineRootfsImage, "The rootfs image of worker machine")
+	cmdCreate.PersistentFlags().Var(&workerMachineRootfsSize, "worker-machine-rootfs-size", "The rootfs size of each worker machine")
+
+	cmdDelete := &cobra.Command{
+		Use:   "delete CLUSTER",
+		Args:  cobra.ExactArgs(1),
+		Short: "Delete a nested cluster.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clusterName := args[0]
+			if err := runCommand(exec.Command("kubectl", "delete", "clusters.cluster.x-k8s.io", clusterName, "--wait")); err != nil {
+				return fmt.Errorf("delete cluster CR: %s", err)
+			}
+
+			os.Remove(filepath.Join(homedir.HomeDir(), ".kube", fmt.Sprintf("knest.%s.kubeconfig", args[0])))
+			return nil
+		},
+	}
+
+	cmdList := &cobra.Command{
+		Use:   "list",
+		Short: "List nested clusters.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := runCommand(exec.Command("kubectl", "get", "clusters.cluster.x-k8s.io", "-o", "wide")); err != nil {
+				return fmt.Errorf("list cluster CRs: %s", err)
+			}
+			return nil
+		},
+	}
+
+	cmdScale := &cobra.Command{
+		Use:   "scale CLUSTER CONTROL_PLANE_MACHINE_COUNT:WORKER_MACHINE_COUNT",
+		Args:  cobra.ExactArgs(2),
+		Short: "Scale a nested cluster.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			counts := strings.Split(args[1], ":")
+			if len(counts) != 2 {
+				return fmt.Errorf("invalid machine counts argument")
+			}
+
+			if counts[0] != "" {
+				if err := runCommand(exec.Command("kubectl", "patch", "kubeadmcontrolplane.controlplane.cluster.x-k8s.io", fmt.Sprintf("%s-cp", args[0]),
+					"--type", "merge", "--patch", fmt.Sprintf("{\"spec\":{\"replicas\":%s}}", counts[0]))); err != nil {
+					return fmt.Errorf("set control-plane replicas: %s", err)
+				}
+			}
+
+			if counts[1] != "" {
+				if err := runCommand(exec.Command("kubectl", "patch", "machinedeployment.cluster.x-k8s.io", fmt.Sprintf("%s-md-0", args[0]),
+					"--type", "merge", "--patch", fmt.Sprintf("{\"spec\":{\"replicas\":%s}}", counts[1]))); err != nil {
+					return fmt.Errorf("set worker replicas: %s", err)
+				}
+			}
+			return nil
+		},
+	}
+
 	rootCmd := &cobra.Command{
 		Use: "knest",
 	}
-
-	createClusterCmd := &cobra.Command{
-		Use:   "create CLUSTER",
-		Args:  cobra.ExactArgs(1),
-		Short: "Create a workload cluster.",
-		RunE:  createCluster,
-	}
-	createClusterCmd.Flags().StringVar(&createClusterOpts.from, "from", createClusterOpts.from, "The URL to read the workload cluster template from")
-	createClusterCmd.Flags().StringVar(&createClusterOpts.kubernetesVersion, "kubernetes-version", createClusterOpts.kubernetesVersion, "The kubernetes version of workload cluster")
-	createClusterCmd.Flags().IntVar(&createClusterOpts.controlPlaneMachineCount, "control-plane-machine-count", createClusterOpts.controlPlaneMachineCount, "The control plane machine count of workload cluster")
-	createClusterCmd.Flags().IntVar(&createClusterOpts.workerMachineCount, "worker-machine-count", createClusterOpts.workerMachineCount, "The worker machine count of workload cluster")
-	createClusterCmd.Flags().StringVar(&createClusterOpts.virtinkPodNetworkCIDR, "virtink-pod-network-cidr", createClusterOpts.virtinkPodNetworkCIDR, "The pod network CIDR of workload cluster")
-	createClusterCmd.Flags().StringVar(&createClusterOpts.virtinkServiceCIDR, "virtink-service-cidr", createClusterOpts.virtinkServiceCIDR, "The service CIDR of workload cluster")
-	createClusterCmd.Flags().IntVar(&createClusterOpts.virtinkMachineCPUCount, "virtink-machine-cpu-count", createClusterOpts.virtinkMachineCPUCount, "The virtink machine CPU count")
-	createClusterCmd.Flags().Var(&createClusterOpts.virtinkMachineMemorySize, "virtink-machine-memory-size", "virtink machine memory size")
-	createClusterCmd.Flags().StringVar(&createClusterOpts.virtinkMachineKernelImage, "virtink-machine-kernel-image", createClusterOpts.virtinkMachineKernelImage, "The virtink machine kernel image")
-	createClusterCmd.Flags().StringVar(&createClusterOpts.virtinkMachineRootfsImage, "virtink-machine-rootfs-image", createClusterOpts.virtinkMachineRootfsImage, "The virtink machine rootfs image")
-	createClusterCmd.Flags().Var(&createClusterOpts.virtinkMachineRootfsSize, "virtink-machine-rootfs-size", "virtink machine rootfs size")
-	rootCmd.AddCommand(createClusterCmd)
-
-	rootCmd.AddCommand(&cobra.Command{
-		Use:   "delete CLUSTER",
-		Args:  cobra.ExactArgs(1),
-		Short: "Delete a workload cluster.",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			clusterName := args[0]
-			if err := runCommandPiped("kubectl", "delete", "clusters.cluster.x-k8s.io", clusterName, "--wait=true"); err != nil {
-				return fmt.Errorf("delete cluster template: %s", err)
-			}
-			return nil
-		},
-	})
-
-	rootCmd.AddCommand(&cobra.Command{
-		Use:   "list",
-		Short: "List workload clusters.",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := runCommandPiped("kubectl", "get", "clusters.cluster.x-k8s.io", "-o", "wide"); err != nil {
-				return fmt.Errorf("list workload clusters: %s", err)
-			}
-			return nil
-		},
-	})
-
-	scale := &cobra.Command{
-		Use:   "scale CLUSTER",
-		Args:  cobra.ExactArgs(1),
-		Short: "Scale workload cluster.",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			clusterName := args[0]
-			isControlPlane := false
-			isWorker := false
-			switch scaleClusterOpts.nodeRole {
-			case "all":
-				isControlPlane = true
-				isWorker = true
-			case "control-plane":
-				isControlPlane = true
-			case "worker":
-				isWorker = true
-			default:
-				return fmt.Errorf("unkown role of Node: '%s'", scaleClusterOpts.nodeRole)
-			}
-			if isControlPlane {
-				if err := runCommandPiped("kubectl", "patch", "kubeadmcontrolplane.controlplane.cluster.x-k8s.io", fmt.Sprintf("%s-cp", clusterName), fmt.Sprintf("--patch={\"spec\":{\"replicas\":%v}}", scaleClusterOpts.nodeReplicas), "--type=merge"); err != nil {
-					return fmt.Errorf("scale control-plane: %s", err)
-				}
-			}
-			if isWorker {
-				if err := runCommandPiped("kubectl", "patch", "machinedeployment.cluster.x-k8s.io", fmt.Sprintf("%s-md", clusterName), fmt.Sprintf("--patch={\"spec\":{\"replicas\":%v}}", scaleClusterOpts.nodeReplicas), "--type=merge"); err != nil {
-					return fmt.Errorf("scale worker: %s", err)
-				}
-			}
-			return nil
-		},
-	}
-	scale.Flags().IntVar(&scaleClusterOpts.nodeReplicas, "node-replicas", scaleClusterOpts.nodeReplicas, "Desired number of Node replicas")
-	scale.Flags().StringVar(&scaleClusterOpts.nodeRole, "node-role", scaleClusterOpts.nodeRole, "Role of Node (options: \"control-plane\", \"worker\", \"all\")")
-	rootCmd.AddCommand(scale)
+	rootCmd.AddCommand(cmdCreate)
+	rootCmd.AddCommand(cmdDelete)
+	rootCmd.AddCommand(cmdList)
+	rootCmd.AddCommand(cmdScale)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -146,195 +232,88 @@ func main() {
 	}
 }
 
-type clusterctlConfigProvider struct {
-	Name string                    `json:"name,omitempty"`
-	URL  string                    `json:"url,omitempty"`
-	Type clusterctlv1.ProviderType `json:"type,omitempty"`
-}
+func setupClusterctlConfig() error {
+	type provider struct {
+		Name string `json:"name,omitempty"`
+		URL  string `json:"url,omitempty"`
+		Type string `json:"type,omitempty"`
+	}
 
-func ensureInfrastructure() error {
-	clusterctlViper := viper.New()
+	clusterctlConfig := viper.New()
 	clusterctlConfigDir := filepath.Join(homedir.HomeDir(), ".cluster-api")
-	clusterctlViper.AddConfigPath(clusterctlConfigDir)
-	clusterctlViper.SetConfigName("clusterctl")
-	clusterctlViper.SetConfigType("yaml")
-	if err := clusterctlViper.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			return err
-		}
-		if err := os.MkdirAll(clusterctlConfigDir, 0644); err != nil {
-			return err
+	clusterctlConfig.AddConfigPath(clusterctlConfigDir)
+	clusterctlConfig.SetConfigName("clusterctl")
+	clusterctlConfig.SetConfigType("yaml")
+	if err := clusterctlConfig.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+			if err := os.MkdirAll(clusterctlConfigDir, 0755); err != nil {
+				return fmt.Errorf("create clusterctl config dir: %s", err)
+			}
+		} else {
+			return fmt.Errorf("read clusterctl config: %s", err)
 		}
 	}
-	clusterctlConfigProviders := []clusterctlConfigProvider{}
-	if err := clusterctlViper.UnmarshalKey("providers", &clusterctlConfigProviders); err != nil {
+
+	var providers []provider
+	if err := clusterctlConfig.UnmarshalKey("providers", &providers); err != nil {
 		return fmt.Errorf("unmarshal providers: %s", err)
 	}
-	providerFound := false
-	for _, provider := range clusterctlConfigProviders {
+
+	for _, provider := range providers {
 		if provider.Name == "virtink" {
-			providerFound = true
-			break
-		}
-	}
-	if !providerFound {
-		virtinkProvider := clusterctlConfigProvider{
-			Name: "virtink",
-			URL:  "https://github.com/smartxworks/cluster-api-provider-virtink/releases/latest/infrastructure-components.yaml",
-			Type: clusterctlv1.InfrastructureProviderType,
-		}
-		clusterctlConfigProviders = append(clusterctlConfigProviders, virtinkProvider)
-
-		clusterctlViper.Set("providers", clusterctlConfigProviders)
-		if err := clusterctlViper.WriteConfigAs(filepath.Join(clusterctlConfigDir, "clusterctl.yaml")); err != nil {
-			return fmt.Errorf("write clusterctl config: %s", err)
+			return nil
 		}
 	}
 
-	if _, err := runCommand("clusterctl", "init", "--infrastructure=virtink", "--wait-providers"); err != nil {
-		if !strings.Contains(err.Error(), `there is already an instance of the "infrastructure-virtink" provider installed`) {
-			return fmt.Errorf("clusterctl init: %s", err)
-		}
-	}
-
-	components := []struct {
-		name     string
-		manifest string
-	}{{
-		name:     "virtink",
-		manifest: "https://github.com/smartxworks/virtink/releases/download/v0.7.1/virtink.yaml",
-	}}
-	for _, component := range components {
-		if err := runCommandPiped("kubectl", "apply", "-f", component.manifest); err != nil {
-			return fmt.Errorf("apply component %s: %s", component.name, err)
-		}
-	}
-
-	webhookDeploymentKeys := []types.NamespacedName{{
-		Name:      "virt-controller",
-		Namespace: "virtink-system",
-	}}
-	for _, k := range webhookDeploymentKeys {
-		if err := runCommandPiped("kubectl", "wait", "-n", k.Namespace, "deployments", k.Name, "--for=condition=Available", "--timeout=-1s"); err != nil {
-			return fmt.Errorf("wait for deployment: %s", err)
-		}
-	}
-
-	return nil
-}
-
-func createCluster(cmd *cobra.Command, args []string) error {
-	if err := ensureInfrastructure(); err != nil {
-		return err
-	}
-
-	createClusterOpts.clusterName = args[0]
-
-	kubeconfig, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(clientcmd.NewDefaultClientConfigLoadingRules(), nil).ClientConfig()
-	if err != nil {
-		return fmt.Errorf("load kubeconfig: %s", err)
-	}
-
-	generateClusterCmdEnvs := []string{"CLUSTERCTL_DISABLE_VERSIONCHECK=true"}
-	generateClusterCmdEnvs = append(generateClusterCmdEnvs,
-		fmt.Sprintf("KUBERNETES_VERSION=%s", createClusterOpts.kubernetesVersion),
-		fmt.Sprintf("CONTROL_PLANE_MACHINE_COUNT=%d", createClusterOpts.controlPlaneMachineCount),
-		fmt.Sprintf("WORKER_MACHINE_COUNT=%d", createClusterOpts.workerMachineCount),
-		fmt.Sprintf("VIRTINK_POD_NETWORK_CIDR=%s", createClusterOpts.virtinkPodNetworkCIDR),
-		fmt.Sprintf("VIRTINK_SERVICE_CIDR=%s", createClusterOpts.virtinkServiceCIDR),
-		fmt.Sprintf("VIRTINK_MACHINE_CPU_COUNT=%d", createClusterOpts.virtinkMachineCPUCount),
-		fmt.Sprintf("VIRTINK_MACHINE_MEMORY_SIZE=%s", createClusterOpts.virtinkMachineMemorySize.String()),
-		fmt.Sprintf("VIRTINK_MACHINE_KERNEL_IMAGE=%s", createClusterOpts.virtinkMachineKernelImage),
-		fmt.Sprintf("VIRTINK_MACHINE_ROOTFS_IMAGE=%s", createClusterOpts.virtinkMachineRootfsImage),
-		fmt.Sprintf("VIRTINK_MACHINE_ROOTFS_SIZE=%s", createClusterOpts.virtinkMachineRootfsSize.String()),
-	)
-
-	generateClusterArgs := []string{"generate", "cluster", createClusterOpts.clusterName}
-	if createClusterOpts.from != "" {
-		generateClusterArgs = append(generateClusterArgs, "--from", createClusterOpts.from)
-	} else {
-		generateClusterArgs = append(generateClusterArgs, "--flavor", "mhc")
-	}
-
-	clusterData, err := runCommandWithEnvs("clusterctl", generateClusterCmdEnvs, generateClusterArgs...)
-	if err != nil {
-		return fmt.Errorf("generate cluster: %s", err)
-	}
-	generatedClusterFileName := fmt.Sprintf("generated-cluster-%s.yaml", createClusterOpts.clusterName)
-	if err := os.WriteFile(generatedClusterFileName, []byte(clusterData), 0644); err != nil {
-		return fmt.Errorf("save generated cluster: %s", err)
-	}
-	if err := runCommandPiped("kubectl", "apply", "-f", generatedClusterFileName); err != nil {
-		return fmt.Errorf("create cluster: %s", err)
-	}
-
-	if err := runCommandPiped("kubectl", "wait", "clusters.cluster.x-k8s.io", createClusterOpts.clusterName, "--for=condition=ControlPlaneInitialized", "--timeout=-1s"); err != nil {
-		return fmt.Errorf("wait for cluster: %s", err)
-	}
-
-	clusterServiceNodePort, err := runCommand("kubectl", "get", "service", createClusterOpts.clusterName, "-o", "jsonpath={.spec.ports[0].nodePort}")
-	if err != nil {
-		return fmt.Errorf("get cluster service: %s", err)
-	}
-	clusterServiceClusterIP, err := runCommand("kubectl", "get", "service", createClusterOpts.clusterName, "-o", "jsonpath={.spec.clusterIP}")
-	if err != nil {
-		return fmt.Errorf("get cluster service: %s", err)
-	}
-
-	clusterKubeconfigData, err := runCommand("kubectl", "get", "secret", fmt.Sprintf("%s-kubeconfig", createClusterOpts.clusterName), "-o", "jsonpath={.data.value}")
-	if err != nil {
-		return fmt.Errorf("get cluster kubeconfig: %s", err)
-	}
-	decodedClusterKubeconfigData, err := base64.StdEncoding.DecodeString(clusterKubeconfigData)
-	if err != nil {
-		return err
-	}
-
-	clusterKubeconfigFileName := fmt.Sprintf("%s.kubeconfig", createClusterOpts.clusterName)
-	if err := os.WriteFile(clusterKubeconfigFileName, decodedClusterKubeconfigData, 0644); err != nil {
-		return fmt.Errorf("save cluster kubeconfig: %s", err)
-	}
-
-	u, err := url.Parse(kubeconfig.Host)
-	if err != nil {
-		return err
-	}
-
-	if err := runCommandPiped("kubectl", "config", "--kubeconfig", clusterKubeconfigFileName, "set-cluster", createClusterOpts.clusterName,
-		"--server", fmt.Sprintf("%s://%s:%s", u.Scheme, u.Hostname(), clusterServiceNodePort),
-		"--tls-server-name", clusterServiceClusterIP); err != nil {
-		return fmt.Errorf("modify cluster kubeconfig: %s", err)
+	providers = append(providers, provider{
+		Name: "virtink",
+		URL:  "https://github.com/smartxworks/cluster-api-provider-virtink/releases/latest/infrastructure-components.yaml",
+		Type: "InfrastructureProvider",
+	})
+	clusterctlConfig.Set("providers", providers)
+	if err := clusterctlConfig.WriteConfigAs(filepath.Join(clusterctlConfigDir, "clusterctl.yaml")); err != nil {
+		return fmt.Errorf("write clusterctl config: %s", err)
 	}
 	return nil
 }
 
-func runCommand(name string, args ...string) (string, error) {
-	cmd := exec.Command(name, args...)
-	out, err := cmd.CombinedOutput()
-	output := string(out)
-	if err != nil {
-		return output, fmt.Errorf("execute command %q: %s: %s", cmd, err, output)
-	}
-	return output, nil
-}
-
-func runCommandPiped(name string, arg ...string) error {
-	cmd := exec.Command(name, arg...)
+func runCommand(cmd *exec.Cmd) error {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("run command %q: %s", cmd.String(), err)
+	}
+	return nil
 }
 
-func runCommandWithEnvs(name string, envs []string, args ...string) (string, error) {
-	cmd := exec.Command(name, args...)
-	cmd.Env = os.Environ()
-	cmd.Env = append(cmd.Env, envs...)
+func getCommandOutput(cmd *exec.Cmd) (string, error) {
+	cmd.Stdin = os.Stdin
 	out, err := cmd.CombinedOutput()
-
 	output := string(out)
 	if err != nil {
-		return output, fmt.Errorf("execute command %q: %s: %s", cmd, err, output)
+		return output, fmt.Errorf("run command %q: %s: %s", cmd, err, output)
 	}
 	return output, nil
+}
+
+func pipeCommands(cmd1 *exec.Cmd, cmd2 *exec.Cmd) error {
+	cmd1.Stdin = os.Stdin
+	cmd1.Stderr = os.Stderr
+	cmd2.Stdin, _ = cmd1.StdoutPipe()
+	cmd2.Stdout = os.Stdout
+	cmd2.Stderr = os.Stderr
+
+	if err := cmd1.Start(); err != nil {
+		return fmt.Errorf("start command %q: %s", cmd1.String(), err)
+	}
+
+	if err := cmd2.Run(); err != nil {
+		return fmt.Errorf("run command %q: %s", cmd2.String(), err)
+	}
+
+	if err := cmd1.Wait(); err != nil {
+		return fmt.Errorf("wait command %q: %s", cmd1.String(), err)
+	}
+	return nil
 }
