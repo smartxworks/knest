@@ -235,8 +235,9 @@ func createCluster(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("load kubeconfig: %s", err)
 	}
 
-	generateClusterCmdEnvs := []string{"CLUSTERCTL_DISABLE_VERSIONCHECK=true"}
+	generateClusterCmdEnvs := os.Environ()
 	generateClusterCmdEnvs = append(generateClusterCmdEnvs,
+		"CLUSTERCTL_DISABLE_VERSIONCHECK=true",
 		fmt.Sprintf("KUBERNETES_VERSION=%s", createClusterOpts.kubernetesVersion),
 		fmt.Sprintf("CONTROL_PLANE_MACHINE_COUNT=%d", createClusterOpts.controlPlaneMachineCount),
 		fmt.Sprintf("WORKER_MACHINE_COUNT=%d", createClusterOpts.workerMachineCount),
@@ -256,14 +257,20 @@ func createCluster(cmd *cobra.Command, args []string) error {
 		generateClusterArgs = append(generateClusterArgs, "--flavor", "mhc")
 	}
 
-	clusterData, err := runCommandWithEnvs("clusterctl", generateClusterCmdEnvs, generateClusterArgs...)
-	if err != nil {
-		return fmt.Errorf("generate cluster: %s", err)
-	}
 	generatedClusterFileName := fmt.Sprintf("generated-cluster-%s.yaml", createClusterOpts.clusterName)
-	if err := os.WriteFile(generatedClusterFileName, []byte(clusterData), 0644); err != nil {
-		return fmt.Errorf("save generated cluster: %s", err)
+	generatedClusterFileWriter, err := os.Create(generatedClusterFileName)
+	if err != nil {
+		return err
 	}
+
+	generateClusterCmd := exec.Command("clusterctl", generateClusterArgs...)
+	generateClusterCmd.Env = generateClusterCmdEnvs
+	generateClusterCmd.Stderr = os.Stderr
+	generateClusterCmd.Stdout = generatedClusterFileWriter
+	if err := generateClusterCmd.Run(); err != nil {
+		return fmt.Errorf("generate cluster yaml: %s", err)
+	}
+
 	if err := runCommandPiped("kubectl", "apply", "-f", generatedClusterFileName); err != nil {
 		return fmt.Errorf("create cluster: %s", err)
 	}
@@ -324,17 +331,4 @@ func runCommandPiped(name string, arg ...string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
-}
-
-func runCommandWithEnvs(name string, envs []string, args ...string) (string, error) {
-	cmd := exec.Command(name, args...)
-	cmd.Env = os.Environ()
-	cmd.Env = append(cmd.Env, envs...)
-	out, err := cmd.CombinedOutput()
-
-	output := string(out)
-	if err != nil {
-		return output, fmt.Errorf("execute command %q: %s: %s", cmd, err, output)
-	}
-	return output, nil
 }
