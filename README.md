@@ -21,7 +21,7 @@ Binaries for Linux, Windows and Mac are available in the [release](https://githu
 You can create a nested Kubernetes cluster simply by typing:
 
 ```bash
-knest create quick-start
+knest create quickstart
 ```
 
 knest would automatically install any missing components (Cluster API providers and Virtink) on the host cluster, create certain number of Virtink VMs, and form them into a new Kubernetes cluster. When the control plane of the new cluster is initialized, a corresponding kubeconfig file would be saved in the canonical kubeconfig directory (`$HOME/.kube/`) for you to further access and control the created cluster.
@@ -31,7 +31,7 @@ knest would automatically install any missing components (Cluster API providers 
 You can scale your nested cluster easily as follows:
 
 ```bash
-knest scale quick-start 3:3
+knest scale quickstart 3:3
 ```
 
 The last argument is in the format of `CONTROL_PLANE_MACHINE_COUNT:WORKER_MACHINE_COUNT`. Leave `CONTROL_PLANE_MACHINE_COUNT` or `WORKER_MACHINE_COUNT` blank if you don't want to change it.
@@ -41,7 +41,7 @@ The last argument is in the format of `CONTROL_PLANE_MACHINE_COUNT:WORKER_MACHIN
 You can delete your nested cluster as follows:
 
 ```bash
-knest delete quick-start
+knest delete quickstart
 ```
 
 Please be noted that this operation would delete all VMs and data of the nested cluster.
