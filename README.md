@@ -46,6 +46,10 @@ knest delete quickstart
 
 Please be noted that this operation would delete all VMs and data of the nested cluster.
 
+## Demo Recording
+
+[![asciicast](https://asciinema.org/a/509497.svg)](https://asciinema.org/a/509497)
+
 ## License
 
 This project is distributed under the [Apache License, Version 2.0](LICENSE).
