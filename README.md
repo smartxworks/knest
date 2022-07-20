@@ -52,6 +52,11 @@ Please be noted that this operation would delete all VMs and data of the nested 
 
 [![asciicast](https://asciinema.org/a/509497.svg)](https://asciinema.org/a/509497)
 
+## Known Issues
+
+- If no CNI plugin is installed in the nested cluster, worker nodes would get re-created about every 10 minutes. This is currently an expected behaviour due to our MachineHealthCheck settings. Once a valid CNI plugin is installed and running, this problem would disappear.
+- Currently [Calico](https://projectcalico.docs.tigera.io/getting-started/kubernetes/quickstart) is the only recommended CNI plugin for nested clusters, due to limited kernel modules was included in the image. Supports for more CNI plugins like Cilium is on the way.
+
 ## License
 
 This project is distributed under the [Apache License, Version 2.0](LICENSE).
