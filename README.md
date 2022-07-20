@@ -54,6 +54,7 @@ Please be noted that this operation would delete all VMs and data of the nested 
 
 ## Known Issues
 
+- Sometimes you may encounter an error with a message like `... rate limit for github api has been reached. Please wait one hour or get a personal API token and assign it to the GITHUB_TOKEN environment variable`, this is a known issue with clusterctl. To work around this, create a personal access token on your GitHub settings page and assign it to the `GITHUB_TOKEN` environment variable.
 - If no CNI plugin is installed in the nested cluster, worker nodes would get re-created about every 10 minutes. This is currently an expected behaviour due to our MachineHealthCheck settings. Once a valid CNI plugin is installed and running, this problem would disappear.
 - Currently [Calico](https://projectcalico.docs.tigera.io/getting-started/kubernetes/quickstart) is the only recommended CNI plugin for nested clusters, due to limited kernel modules was included in the image. Supports for more CNI plugins like Cilium is on the way.
 
