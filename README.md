@@ -55,9 +55,17 @@ Please be noted that this operation would delete all VMs and data of the nested 
 ## Known Issues
 
 - Sometimes you may encounter an error with a message like `... rate limit for github api has been reached. Please wait one hour or get a personal API token and assign it to the GITHUB_TOKEN environment variable`, this is a known issue with clusterctl. To work around this, create a personal access token on your GitHub settings page and assign it to the `GITHUB_TOKEN` environment variable.
-- If no CNI plugin is installed in the nested cluster, worker nodes would get re-created about every 10 minutes. This is currently an expected behaviour due to our MachineHealthCheck settings. Once a valid CNI plugin is installed and running, this problem would disappear.
-- Currently [Calico](https://projectcalico.docs.tigera.io/getting-started/kubernetes/quickstart) is the only recommended CNI plugin for nested clusters, due to limited kernel modules was included in the image. Supports for more CNI plugins like Cilium is on the way.
-- If both host Kubernetes cluster and nested Kubernetes cluster use [Calico](https://projectcalico.docs.tigera.io/getting-started/kubernetes/quickstart) as CNI plugin, the host Kubernetes cluster calico-node daemonset's calico-node container should set environment variable `FELIX_ALLOWIPIPPACKETSFROMWORKLOADS` to `"true"`.
+- If no CNI plugin is installed in the nested cluster, worker nodes would get re-created about every 5 minutes. This is currently an expected behaviour due to our MachineHealthCheck settings. Once a valid CNI plugin is installed and running, this problem would disappear.
+- Currently [Calico](https://projectcalico.docs.tigera.io/getting-started/kubernetes/quickstart) and [Cilium](https://docs.cilium.io/en/stable/gettingstarted/#getting-started-guides) are the only two recommended CNI plugins for nested clusters, due to limited kernel modules was included in the image. Support for more CNI plugins is on the way. And overlay network is required for nested cluster CNI, the supports for CNI and encapsulation mode are as follows:
+
+  | CNI    | Encapsulation Mode | Encryption |
+  |--------|--------------------|------------|
+  | Calico | IPIP               | false      |
+  | Calico | VXLAN(4789/UDP)    | false      |
+  | Cilium | VXLAN(8472/UDP)    | false      |
+  | Cilium | Geneve(6081/UDP)   | false      |
+
+- The underlying network and firewalls must allow encapsulated packets. For example, if host cluster uses Calico as CNI plugin, the IPIP and VXLAN(4789/UDP) encapsulated packets from nested cluster will be `DROP` by default. See [Configuring Felix](https://projectcalico.docs.tigera.io/reference/felix/configuration) to allow IPIP and VXLAN(4789/UDP) packets from workloads. 
 
 ## License
 
