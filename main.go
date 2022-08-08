@@ -24,6 +24,7 @@ const (
 
 func main() {
 	var (
+		targetNamespace                = "default"
 		kubernetesVersion              = "1.24.0"
 		controlPlaneMachineCount       = 1
 		workerMachineCount             = 1
@@ -77,8 +78,18 @@ func main() {
 				}
 			}
 
+			targetNamespaceOutput, err := getCommandOutput(exec.Command("kubectl", "get", "namespace", targetNamespace, "--ignore-not-found"))
+			if err != nil {
+				return fmt.Errorf("get target namespace: %s", err)
+			}
+			if len(targetNamespaceOutput) == 0 {
+				if err := runCommand(exec.Command("kubectl", "create", "namespace", targetNamespace)); err != nil {
+					return fmt.Errorf("create target namespace: %s", err)
+				}
+			}
 			generateCmd := exec.Command("clusterctl", "generate", "cluster", args[0],
 				"--infrastructure", fmt.Sprintf("virtink:%s", VirtinkProviderVersion), "--flavor", "internal",
+				"--target-namespace", targetNamespace,
 				"--kubernetes-version", kubernetesVersion,
 				"--control-plane-machine-count", strconv.Itoa(controlPlaneMachineCount),
 				"--worker-machine-count", strconv.Itoa(workerMachineCount))
@@ -101,21 +112,21 @@ func main() {
 			}
 
 			fmt.Println("Waiting for control plane to be initialized...")
-			if err := runCommand(exec.Command("kubectl", "wait", "clusters.cluster.x-k8s.io", args[0], "--for", "condition=ControlPlaneInitialized", "--timeout", "-1s")); err != nil {
+			if err := runCommand(exec.Command("kubectl", "wait", "clusters.cluster.x-k8s.io", args[0], "--namespace", targetNamespace, "--for", "condition=ControlPlaneInitialized", "--timeout", "-1s")); err != nil {
 				return fmt.Errorf("wait for control plane to be initialized: %s", err)
 			}
 
 			// TODO: LB support
-			nodePort, err := getCommandOutput(exec.Command("kubectl", "get", "service", args[0], "-o", "jsonpath={.spec.ports[0].nodePort}"))
+			nodePort, err := getCommandOutput(exec.Command("kubectl", "get", "service", args[0], "--namespace", targetNamespace, "-o", "jsonpath={.spec.ports[0].nodePort}"))
 			if err != nil {
 				return fmt.Errorf("get node port: %s", err)
 			}
-			clusterIP, err := getCommandOutput(exec.Command("kubectl", "get", "service", args[0], "-o", "jsonpath={.spec.clusterIP}"))
+			clusterIP, err := getCommandOutput(exec.Command("kubectl", "get", "service", args[0], "--namespace", targetNamespace, "-o", "jsonpath={.spec.clusterIP}"))
 			if err != nil {
 				return fmt.Errorf("get cluster IP: %s", err)
 			}
 
-			encodedKubeconfigData, err := getCommandOutput(exec.Command("kubectl", "get", "secret", fmt.Sprintf("%s-kubeconfig", args[0]), "-o", "jsonpath={.data.value}"))
+			encodedKubeconfigData, err := getCommandOutput(exec.Command("kubectl", "get", "secret", fmt.Sprintf("%s-kubeconfig", args[0]), "--namespace", targetNamespace, "-o", "jsonpath={.data.value}"))
 			if err != nil {
 				return fmt.Errorf("get kubeconfig: %s", err)
 			}
@@ -124,7 +135,7 @@ func main() {
 				return fmt.Errorf("decode kubeconfig: %s", err)
 			}
 
-			kubeconfigFilePath := filepath.Join(homedir.HomeDir(), ".kube", fmt.Sprintf("knest.%s.kubeconfig", args[0]))
+			kubeconfigFilePath := filepath.Join(homedir.HomeDir(), ".kube", fmt.Sprintf("knest.%s.%s.kubeconfig", targetNamespace, args[0]))
 			if err := os.WriteFile(kubeconfigFilePath, kubeconfigData, 0644); err != nil {
 				return fmt.Errorf("save kubeconfig: %s", err)
 			}
@@ -171,11 +182,11 @@ func main() {
 		Short: "Delete a nested cluster.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clusterName := args[0]
-			if err := runCommand(exec.Command("kubectl", "delete", "clusters.cluster.x-k8s.io", clusterName, "--wait")); err != nil {
+			if err := runCommand(exec.Command("kubectl", "delete", "clusters.cluster.x-k8s.io", clusterName, "--namespace", targetNamespace, "--wait")); err != nil {
 				return fmt.Errorf("delete cluster CR: %s", err)
 			}
 
-			os.Remove(filepath.Join(homedir.HomeDir(), ".kube", fmt.Sprintf("knest.%s.kubeconfig", args[0])))
+			os.Remove(filepath.Join(homedir.HomeDir(), ".kube", fmt.Sprintf("knest.%s.%s.kubeconfig", targetNamespace, args[0])))
 			return nil
 		},
 	}
@@ -184,7 +195,7 @@ func main() {
 		Use:   "list",
 		Short: "List nested clusters.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := runCommand(exec.Command("kubectl", "get", "clusters.cluster.x-k8s.io", "-o", "wide")); err != nil {
+			if err := runCommand(exec.Command("kubectl", "get", "clusters.cluster.x-k8s.io", "--namespace", targetNamespace, "-o", "wide")); err != nil {
 				return fmt.Errorf("list cluster CRs: %s", err)
 			}
 			return nil
@@ -203,14 +214,14 @@ func main() {
 
 			if counts[0] != "" {
 				if err := runCommand(exec.Command("kubectl", "patch", "kubeadmcontrolplane.controlplane.cluster.x-k8s.io", fmt.Sprintf("%s-cp", args[0]),
-					"--type", "merge", "--patch", fmt.Sprintf("{\"spec\":{\"replicas\":%s}}", counts[0]))); err != nil {
+					"--namespace", targetNamespace, "--type", "merge", "--patch", fmt.Sprintf("{\"spec\":{\"replicas\":%s}}", counts[0]))); err != nil {
 					return fmt.Errorf("set control-plane replicas: %s", err)
 				}
 			}
 
 			if counts[1] != "" {
 				if err := runCommand(exec.Command("kubectl", "patch", "machinedeployment.cluster.x-k8s.io", fmt.Sprintf("%s-md-0", args[0]),
-					"--type", "merge", "--patch", fmt.Sprintf("{\"spec\":{\"replicas\":%s}}", counts[1]))); err != nil {
+					"--namespace", targetNamespace, "--type", "merge", "--patch", fmt.Sprintf("{\"spec\":{\"replicas\":%s}}", counts[1]))); err != nil {
 					return fmt.Errorf("set worker replicas: %s", err)
 				}
 			}
@@ -221,6 +232,7 @@ func main() {
 	rootCmd := &cobra.Command{
 		Use: "knest",
 	}
+	rootCmd.PersistentFlags().StringVarP(&targetNamespace, "target-namespace", "n", targetNamespace, "The namespace to use for the nested cluster.")
 	rootCmd.AddCommand(cmdCreate)
 	rootCmd.AddCommand(cmdDelete)
 	rootCmd.AddCommand(cmdList)
