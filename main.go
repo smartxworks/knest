@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	VirtinkVersion         = "v0.8.0"
+	VirtinkVersion         = "v0.9.0"
 	VirtinkProviderVersion = "v0.3.0"
 )
 
