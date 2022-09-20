@@ -28,6 +28,21 @@ knest would automatically install any missing components (Cluster API providers 
 
 > ⚠️ Please be awared that the pod subnet and the service subnet of your nested cluster should not overlap with host cluster's pod subnet, service subnet or physical subnet. Use `--pod-network-cidr` and `--service-cidr` flags to configure nested cluster's pod subnet and service subnet respectively when necessary.
 
+### Create a persistent Nested Kubernetes Cluster
+
+You can create a persistent nested Kubernetes cluster, all the Nodes of the cluster have a persistent storage and IP address.
+
+Prerequisites
+
+- host cluster has a default StorageClass, knest will create PVC for each nested cluster Node to store data on it.
+- host cluster CNI should support specify IP and MAC address for pod, knest will use it to allocate persistent IP and MAC address to Node of nested cluster.
+
+This is an example to create a workload cluster on a host cluster that use Calico as CNI.
+
+```bash
+knest create --persistent --persisten-machine-addresses=172.22.127.134,172.22.127.135 --persisten-machine-annotations='cni.projectcalico.org/ipAddrs=["$IP_ADDRESS"]' --persisten-machine-annotations='cni.projectcalico.org/hwAddr=$MAC_ADDRESS' quickstart-persistent
+```
+
 ### Scale the Nested Kubernetes Cluster
 
 You can scale your nested cluster easily as follows:
