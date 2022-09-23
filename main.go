@@ -45,6 +45,7 @@ func main() {
 		persistentWorkerMachineRootfsImage       = "smartxworks/capch-rootfs-cdi-1.24.0"
 		persistentMachineAddresses               []string
 		persistentMachineAnnotations             []string
+		clusterTemplate                          string
 	)
 
 	cmdCreate := &cobra.Command{
@@ -93,7 +94,6 @@ func main() {
 				}
 			}
 			generateCmd := exec.Command("clusterctl", "generate", "cluster", args[0],
-				"--infrastructure", fmt.Sprintf("virtink:%s", VirtinkProviderVersion),
 				"--target-namespace", targetNamespace,
 				"--kubernetes-version", kubernetesVersion,
 				"--control-plane-machine-count", strconv.Itoa(controlPlaneMachineCount),
@@ -113,8 +113,18 @@ func main() {
 				fmt.Sprintf("VIRTINK_WORKER_MACHINE_ROOTFS_IMAGE=%s", workerMachineRootfsImage),
 				fmt.Sprintf("VIRTINK_WORKER_MACHINE_ROOTFS_SIZE=%s", workerMachineRootfsSize.String()))
 
+			if clusterTemplate != "" {
+				generateCmd.Args = append(generateCmd.Args, "--from", clusterTemplate)
+			} else {
+				generateCmd.Args = append(generateCmd.Args, "--infrastructure", fmt.Sprintf("virtink:%s", VirtinkProviderVersion))
+				if persistent {
+					generateCmd.Args = append(generateCmd.Args, "--flavor", "cdi-internal")
+				} else {
+					generateCmd.Args = append(generateCmd.Args, "--flavor", "internal")
+				}
+			}
+
 			if persistent {
-				generateCmd.Args = append(generateCmd.Args, "--flavor", "cdi-internal")
 				generateCmd.Env = append(os.Environ(),
 					fmt.Sprintf("VIRTINK_CONTROL_PLANE_MACHINE_ROOTFS_CDI_IMAGE=%s", persistentControlPlaneMachineRootfsImage),
 					fmt.Sprintf("VIRTINK_WORKER_MACHINE_ROOTFS_CDI_IMAGE=%s", persistentWorkerMachineRootfsImage),
@@ -127,7 +137,6 @@ func main() {
 						return fmt.Sprintf("[%v]", strings.Join(quotedAnnotations, ","))
 					}()))
 			} else {
-				generateCmd.Args = append(generateCmd.Args, "--flavor", "internal")
 				generateCmd.Env = append(os.Environ(),
 					fmt.Sprintf("VIRTINK_CONTROL_PLANE_MACHINE_ROOTFS_IMAGE=%s", controlPlaneMachineRootfsImage),
 					fmt.Sprintf("VIRTINK_WORKER_MACHINE_ROOTFS_IMAGE=%s", workerMachineRootfsImage))
@@ -206,6 +215,7 @@ func main() {
 	cmdCreate.PersistentFlags().StringSliceVar(&persistentMachineAddresses, "persistent-machine-addresses", persistentMachineAddresses, "The candidate IP addresses for persistent machines of nested cluster.")
 	cmdCreate.PersistentFlags().StringArrayVar(&persistentMachineAnnotations, "persistent-machine-annotations", persistentMachineAnnotations,
 		"The host cluster CNI required annotations to specify IP and MAC address for pod, can use '$IP_ADDRESS' and '$MAC_ADDRESS' as placeholders which will be replaced by allocated IP and MAC address.")
+	cmdCreate.PersistentFlags().StringVar(&clusterTemplate, "cluster-template", clusterTemplate, fmt.Sprintf("The URL of the cluster template to use for the nested cluster. If unspecified, the cluster template of cluster-api-provider-virtink %s will be used.", VirtinkProviderVersion))
 
 	cmdDelete := &cobra.Command{
 		Use:   "delete CLUSTER",
