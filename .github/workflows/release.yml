@@ -9,6 +9,9 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+      - id: get_version
+        run: echo ::set-output name=version::${GITHUB_REF/refs\/tags\//}
+
       - uses: actions/checkout@v2
 
       - uses: actions/setup-go@v2
@@ -18,11 +21,11 @@ jobs:
       - run: |
           rm -rf out
           mkdir out
-          CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -a -o out/knest-linux-amd64       main.go
-          CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build -a -o out/knest-linux-arm64       main.go
-          CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build -a -o out/knest-darwin-amd64      main.go
-          CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build -a -o out/knest-darwin-arm64      main.go
-          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -a -o out/knest-windows-amd64.exe main.go
+          CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build --ldflags="-X main.version=${{ steps.get_version.outputs.version }}" -a -o out/knest-linux-amd64       main.go
+          CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build --ldflags="-X main.version=${{ steps.get_version.outputs.version }}" -a -o out/knest-linux-arm64       main.go
+          CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build --ldflags="-X main.version=${{ steps.get_version.outputs.version }}" -a -o out/knest-darwin-amd64      main.go
+          CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build --ldflags="-X main.version=${{ steps.get_version.outputs.version }}" -a -o out/knest-darwin-arm64      main.go
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build --ldflags="-X main.version=${{ steps.get_version.outputs.version }}" -a -o out/knest-windows-amd64.exe main.go
 
       - uses: softprops/action-gh-release@v1
         with:

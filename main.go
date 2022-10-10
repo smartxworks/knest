@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -21,6 +22,14 @@ const (
 	VirtinkVersion         = "v0.10.1"
 	VirtinkProviderVersion = "v0.4.0"
 )
+
+var version string
+
+type Version struct {
+	Knest                     string `json:"knest"`
+	Virtink                   string `json:"virtink"`
+	ClusterAPIProviderVirtink string `json:"cluster-api-provider-virtink"`
+}
 
 func main() {
 	var (
@@ -270,6 +279,34 @@ func main() {
 		},
 	}
 
+	var versionOutput string
+	cmdVersion := &cobra.Command{
+		Use:   "version",
+		Short: "Print knest version.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			v := Version{
+				Knest:                     version,
+				Virtink:                   VirtinkVersion,
+				ClusterAPIProviderVirtink: VirtinkProviderVersion,
+			}
+
+			switch versionOutput {
+			case "":
+				fmt.Printf("knest version: %#v, Virtink version: %#v, cluster-api-provider-virtink version: %#v\n", v.Knest, v.Virtink, v.ClusterAPIProviderVirtink)
+			case "json":
+				data, err := json.MarshalIndent(v, "", "	")
+				if err != nil {
+					return err
+				}
+				fmt.Printf("%s\n", data)
+			default:
+				return fmt.Errorf("unsupported output format: %s", versionOutput)
+			}
+			return nil
+		},
+	}
+	cmdVersion.PersistentFlags().StringVarP(&versionOutput, "output", "o", versionOutput, "Output format; available options are 'json'")
+
 	rootCmd := &cobra.Command{
 		Use: "knest",
 	}
@@ -278,6 +315,7 @@ func main() {
 	rootCmd.AddCommand(cmdDelete)
 	rootCmd.AddCommand(cmdList)
 	rootCmd.AddCommand(cmdScale)
+	rootCmd.AddCommand(cmdVersion)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
