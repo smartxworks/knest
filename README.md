@@ -40,7 +40,7 @@ Prerequisites
 This is an example to create a workload cluster on a host cluster that use Calico as CNI.
 
 ```bash
-knest create --persistent --persisten-machine-addresses=172.22.127.134,172.22.127.135 --persisten-machine-annotations='cni.projectcalico.org/ipAddrs=["$IP_ADDRESS"]' --persisten-machine-annotations='cni.projectcalico.org/hwAddr=$MAC_ADDRESS' quickstart-persistent
+knest create --persistent --persistent-machine-addresses=172.22.127.134,172.22.127.135 --persistent-machine-annotations='cni.projectcalico.org/ipAddrs=["$IP_ADDRESS"]' --persistent-machine-annotations='cni.projectcalico.org/hwAddr=$MAC_ADDRESS' quickstart-persistent
 ```
 
 ### Scale the Nested Kubernetes Cluster
