@@ -107,7 +107,8 @@ func main() {
 				"--kubernetes-version", kubernetesVersion,
 				"--control-plane-machine-count", strconv.Itoa(controlPlaneMachineCount),
 				"--worker-machine-count", strconv.Itoa(workerMachineCount))
-			generateCmd.Env = append(os.Environ(),
+			generateCmd.Env = os.Environ()
+			generateCmd.Env = append(generateCmd.Env,
 				fmt.Sprintf("POD_NETWORK_CIDR=%s", podNetworkCIDR),
 				fmt.Sprintf("SERVICE_CIDR=%s", serviceCIDR),
 				"VIRTINK_CONTROL_PLANE_SERVICE_TYPE=NodePort",
@@ -134,7 +135,7 @@ func main() {
 			}
 
 			if persistent {
-				generateCmd.Env = append(os.Environ(),
+				generateCmd.Env = append(generateCmd.Env,
 					fmt.Sprintf("VIRTINK_CONTROL_PLANE_MACHINE_ROOTFS_CDI_IMAGE=%s", persistentControlPlaneMachineRootfsImage),
 					fmt.Sprintf("VIRTINK_WORKER_MACHINE_ROOTFS_CDI_IMAGE=%s", persistentWorkerMachineRootfsImage),
 					fmt.Sprintf("VIRTINK_NODE_ADDRESSES=[%v]", strings.Join(persistentMachineAddresses, ",")),
@@ -146,7 +147,7 @@ func main() {
 						return fmt.Sprintf("[%v]", strings.Join(quotedAnnotations, ","))
 					}()))
 			} else {
-				generateCmd.Env = append(os.Environ(),
+				generateCmd.Env = append(generateCmd.Env,
 					fmt.Sprintf("VIRTINK_CONTROL_PLANE_MACHINE_ROOTFS_IMAGE=%s", controlPlaneMachineRootfsImage),
 					fmt.Sprintf("VIRTINK_WORKER_MACHINE_ROOTFS_IMAGE=%s", workerMachineRootfsImage))
 			}
