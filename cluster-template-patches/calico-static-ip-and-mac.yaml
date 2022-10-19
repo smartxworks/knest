@@ -1,0 +1,16 @@
+resources:
+  - cluster-template.yaml
+patches:
+  - target:
+      kind: VirtinkMachineTemplate
+    patch: |-
+      apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+      kind: VirtinkMachineTemplate
+      metadata:
+        name: "not-used"
+      spec:
+        template:
+          metadata:
+            annotations:
+              cni.projectcalico.org/ipAddrs: '["$IP_ADDRESS"]'
+              cni.projectcalico.org/hwAddr: '$MAC_ADDRESS'

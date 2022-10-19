@@ -1,0 +1,16 @@
+resources:
+  - cluster-template.yaml
+patches:
+  - target:
+      kind: VirtinkMachineTemplate
+    patch: |-
+      apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+      kind: VirtinkMachineTemplate
+      metadata:
+        name: "not-used"
+      spec:
+        template:
+          metadata:
+            annotations:
+              ovn.kubernetes.io/ip_address: "$IP_ADDRESS"
+              ovn.kubernetes.io/mac_address: "$MAC_ADDRESS"

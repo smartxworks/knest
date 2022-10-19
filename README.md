@@ -37,11 +37,15 @@ Prerequisites
 - host cluster has a default StorageClass, knest will create PVC for each nested cluster Node to store data on it.
 - host cluster CNI should support specify IP and MAC address for pod, knest will use it to allocate persistent IP and MAC address to Node of nested cluster.
 
+Currently knest directly support host cluster that use 'Calico' or 'Kube-OVN' as CNI.
+
 This is an example to create a workload cluster on a host cluster that use Calico as CNI.
 
 ```bash
-knest create --persistent --persistent-machine-addresses=172.22.127.134,172.22.127.135 --persistent-machine-annotations='cni.projectcalico.org/ipAddrs=["$IP_ADDRESS"]' --persistent-machine-annotations='cni.projectcalico.org/hwAddr=$MAC_ADDRESS' quickstart-persistent
+knest create  quickstart-persistent --persistent --persistent-machine-addresses=172.22.127.134,172.22.127.135 --persistent-host-cluster-cni=calico
 ```
+
+for other CNIs, you can download [cluster-template](https://github.com/smartxworks/cluster-api-provider-virtink/tree/main/templates) and modify it firstly, then use `--cluster-template` to use it.
 
 ### Scale the Nested Kubernetes Cluster
 

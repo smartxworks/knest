@@ -1,6 +1,7 @@
 package main
 
 import (
+	"embed"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -31,6 +32,9 @@ type Version struct {
 	ClusterAPIProviderVirtink string `json:"cluster-api-provider-virtink"`
 }
 
+//go:embed cluster-template-patches/*
+var clusterTemplatePatchesFS embed.FS
+
 func main() {
 	var (
 		targetNamespace                          = "default"
@@ -53,7 +57,7 @@ func main() {
 		persistentControlPlaneMachineRootfsImage = "smartxworks/capch-rootfs-cdi-1.24.0"
 		persistentWorkerMachineRootfsImage       = "smartxworks/capch-rootfs-cdi-1.24.0"
 		persistentMachineAddresses               []string
-		persistentMachineAnnotations             []string
+		persistentHostClusterCNI                 string
 		clusterTemplate                          string
 	)
 
@@ -134,24 +138,68 @@ func main() {
 				}
 			}
 
+			clusterTemplatePatches := map[string][]byte{}
 			if persistent {
 				generateCmd.Env = append(generateCmd.Env,
 					fmt.Sprintf("VIRTINK_CONTROL_PLANE_MACHINE_ROOTFS_CDI_IMAGE=%s", persistentControlPlaneMachineRootfsImage),
 					fmt.Sprintf("VIRTINK_WORKER_MACHINE_ROOTFS_CDI_IMAGE=%s", persistentWorkerMachineRootfsImage),
 					fmt.Sprintf("VIRTINK_NODE_ADDRESSES=[%v]", strings.Join(persistentMachineAddresses, ",")),
-					fmt.Sprintf("VIRTINK_NODE_ADDRESS_ANNOTATIONS=%s", func() string {
-						quotedAnnotations := []string{}
-						for i := range persistentMachineAnnotations {
-							quotedAnnotations = append(quotedAnnotations, fmt.Sprintf("%q", persistentMachineAnnotations[i]))
-						}
-						return fmt.Sprintf("[%v]", strings.Join(quotedAnnotations, ","))
-					}()))
+				)
+
+				if persistentHostClusterCNI != "" {
+					var patchFileName string
+					switch persistentHostClusterCNI {
+					case "calico":
+						patchFileName = filepath.Join("cluster-template-patches", "calico-static-ip-and-mac.yaml")
+					case "kube-ovn":
+						patchFileName = filepath.Join("cluster-template-patches", "kube-ovn-static-ip-and-mac.yaml")
+					default:
+						return fmt.Errorf("unsupported host cluster CNI: %s", persistentHostClusterCNI)
+					}
+
+					patchBytes, err := clusterTemplatePatchesFS.ReadFile(patchFileName)
+					if err != nil {
+						return err
+					}
+					clusterTemplatePatches[patchFileName] = patchBytes
+				}
 			} else {
 				generateCmd.Env = append(generateCmd.Env,
 					fmt.Sprintf("VIRTINK_CONTROL_PLANE_MACHINE_ROOTFS_IMAGE=%s", controlPlaneMachineRootfsImage),
 					fmt.Sprintf("VIRTINK_WORKER_MACHINE_ROOTFS_IMAGE=%s", workerMachineRootfsImage))
 			}
-			if err := pipeCommands(generateCmd, exec.Command("kubectl", "apply", "-f", "-")); err != nil {
+
+			kustomizeWorkDir, err := os.MkdirTemp("", "knest")
+			if err != nil {
+				return err
+			}
+
+			clusterTemplateFilePath := filepath.Join(kustomizeWorkDir, "cluster-template.yaml")
+			clusterTemplateFile, err := os.Create(clusterTemplateFilePath)
+			if err != nil {
+				return err
+			}
+			generateCmd.Stdout = clusterTemplateFile
+			if err := runCommand(generateCmd); err != nil {
+				return fmt.Errorf("clusterctl generate cluster template: %s", err)
+			}
+			clusterTemplateFile.Close()
+
+			for patchFile, patchBytes := range clusterTemplatePatches {
+				kustomizationFilePath := filepath.Join(kustomizeWorkDir, "kustomization.yaml")
+				if err := os.WriteFile(kustomizationFilePath, patchBytes, 0644); err != nil {
+					return err
+				}
+
+				kustomizeCmd := exec.Command("kubectl", "kustomize", kustomizeWorkDir, "--output", clusterTemplateFilePath)
+				if err := runCommand(kustomizeCmd); err != nil {
+					return fmt.Errorf("kustomize cluster template for %s: %s", patchFile, err)
+				}
+			}
+
+			fmt.Printf("starting create cluster by %s\n", clusterTemplateFilePath)
+			applyCmd := exec.Command("kubectl", "apply", "-f", clusterTemplateFilePath)
+			if err := runCommand(applyCmd); err != nil {
 				return fmt.Errorf("create cluster resources: %s", err)
 			}
 
@@ -223,8 +271,7 @@ func main() {
 	cmdCreate.PersistentFlags().StringVar(&persistentControlPlaneMachineRootfsImage, "persistent-control-plane-machine-rootfs-image", persistentControlPlaneMachineRootfsImage, "The rootfs image of persisten control plane machine.")
 	cmdCreate.PersistentFlags().StringVar(&persistentWorkerMachineRootfsImage, "persistent-worker-machine-rootfs-image", persistentWorkerMachineRootfsImage, "The rootfs image of persistent worker machine.")
 	cmdCreate.PersistentFlags().StringSliceVar(&persistentMachineAddresses, "persistent-machine-addresses", persistentMachineAddresses, "The candidate IP addresses for persistent machines of nested cluster.")
-	cmdCreate.PersistentFlags().StringArrayVar(&persistentMachineAnnotations, "persistent-machine-annotations", persistentMachineAnnotations,
-		"The host cluster CNI required annotations to specify IP and MAC address for pod, can use '$IP_ADDRESS' and '$MAC_ADDRESS' as placeholders which will be replaced by allocated IP and MAC address.")
+	cmdCreate.PersistentFlags().StringVar(&persistentHostClusterCNI, "persistent-host-cluster-cni", persistentHostClusterCNI, "The CNI of the host cluster, support 'calico' and 'kube-ovn'.")
 	cmdCreate.PersistentFlags().StringVar(&clusterTemplate, "cluster-template", clusterTemplate, fmt.Sprintf("The URL of the cluster template to use for the nested cluster. If unspecified, the cluster template of cluster-api-provider-virtink %s will be used.", VirtinkProviderVersion))
 
 	cmdDelete := &cobra.Command{
@@ -370,9 +417,15 @@ func setupClusterctlConfig() error {
 }
 
 func runCommand(cmd *exec.Cmd) error {
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	if cmd.Stdin == nil {
+		cmd.Stdin = os.Stdin
+	}
+	if cmd.Stdout == nil {
+		cmd.Stdout = os.Stdout
+	}
+	if cmd.Stderr == nil {
+		cmd.Stderr = os.Stderr
+	}
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("run command %q: %s", cmd.String(), err)
 	}
@@ -387,25 +440,4 @@ func getCommandOutput(cmd *exec.Cmd) (string, error) {
 		return output, fmt.Errorf("run command %q: %s: %s", cmd, err, output)
 	}
 	return output, nil
-}
-
-func pipeCommands(cmd1 *exec.Cmd, cmd2 *exec.Cmd) error {
-	cmd1.Stdin = os.Stdin
-	cmd1.Stderr = os.Stderr
-	cmd2.Stdin, _ = cmd1.StdoutPipe()
-	cmd2.Stdout = os.Stdout
-	cmd2.Stderr = os.Stderr
-
-	if err := cmd1.Start(); err != nil {
-		return fmt.Errorf("start command %q: %s", cmd1.String(), err)
-	}
-
-	if err := cmd2.Run(); err != nil {
-		return fmt.Errorf("run command %q: %s", cmd2.String(), err)
-	}
-
-	if err := cmd1.Wait(); err != nil {
-		return fmt.Errorf("wait command %q: %s", cmd1.String(), err)
-	}
-	return nil
 }
