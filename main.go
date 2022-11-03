@@ -309,7 +309,8 @@ func main() {
 	cmdVersion.PersistentFlags().StringVarP(&versionOutput, "output", "o", versionOutput, "Output format; available options are 'json'")
 
 	rootCmd := &cobra.Command{
-		Use: "knest",
+		Use:          "knest",
+		SilenceUsage: true,
 	}
 	rootCmd.PersistentFlags().StringVarP(&targetNamespace, "target-namespace", "n", targetNamespace, "The namespace to use for the nested cluster.")
 	rootCmd.AddCommand(cmdCreate)
@@ -319,7 +320,6 @@ func main() {
 	rootCmd.AddCommand(cmdVersion)
 
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
