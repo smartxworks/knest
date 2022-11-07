@@ -39,28 +39,28 @@ var clusterTemplatePatchesFS embed.FS
 
 func main() {
 	var (
-		targetNamespace                          = "default"
-		kubernetesVersion                        = "1.24.0"
-		controlPlaneMachineCount                 = 1
-		workerMachineCount                       = 1
-		podNetworkCIDR                           = "192.168.0.0/16"
-		serviceCIDR                              = "10.96.0.0/12"
-		controlPlaneMachineCPUCores              = 2
-		controlPlaneMachineMemorySize            = resource.QuantityValue{Quantity: resource.MustParse("4Gi")}
-		controlPlaneMachineKernelImage           = "smartxworks/capch-kernel-5.15.12"
-		controlPlaneMachineRootfsImage           = "smartxworks/capch-rootfs-1.24.0"
-		controlPlaneMachineRootfsSize            = resource.QuantityValue{Quantity: resource.MustParse("4Gi")}
-		workerMachineCPUCores                    = 2
-		workerMachineMemorySize                  = resource.QuantityValue{Quantity: resource.MustParse("4Gi")}
-		workerMachineKernelImage                 = "smartxworks/capch-kernel-5.15.12"
-		workerMachineRootfsImage                 = "smartxworks/capch-rootfs-1.24.0"
-		workerMachineRootfsSize                  = resource.QuantityValue{Quantity: resource.MustParse("4Gi")}
-		persistent                               = false
-		persistentControlPlaneMachineRootfsImage = "smartxworks/capch-rootfs-cdi-1.24.0"
-		persistentWorkerMachineRootfsImage       = "smartxworks/capch-rootfs-cdi-1.24.0"
-		persistentMachineAddresses               []string
-		persistentHostClusterCNI                 string
-		clusterTemplate                          string
+		targetNamespace                = "default"
+		kubernetesVersion              = "1.24.0"
+		controlPlaneMachineCount       = 1
+		workerMachineCount             = 1
+		newControlPlaneMachineCount    = -1
+		newWorkerMachineCount          = -1
+		podNetworkCIDR                 = "192.168.0.0/16"
+		serviceCIDR                    = "10.96.0.0/12"
+		controlPlaneMachineCPUCores    = 2
+		controlPlaneMachineMemorySize  = resource.QuantityValue{Quantity: resource.MustParse("4Gi")}
+		controlPlaneMachineKernelImage = ""
+		controlPlaneMachineRootfsImage = ""
+		controlPlaneMachineRootfsSize  = resource.QuantityValue{Quantity: resource.MustParse("4Gi")}
+		workerMachineCPUCores          = 2
+		workerMachineMemorySize        = resource.QuantityValue{Quantity: resource.MustParse("4Gi")}
+		workerMachineKernelImage       = ""
+		workerMachineRootfsImage       = ""
+		workerMachineRootfsSize        = resource.QuantityValue{Quantity: resource.MustParse("4Gi")}
+		persistent                     = false
+		machineAddresses               []string
+		hostClusterCNI                 string
+		from                           string
 	)
 
 	cmdCreate := &cobra.Command{
@@ -129,8 +129,8 @@ func main() {
 				fmt.Sprintf("VIRTINK_WORKER_MACHINE_ROOTFS_IMAGE=%s", workerMachineRootfsImage),
 				fmt.Sprintf("VIRTINK_WORKER_MACHINE_ROOTFS_SIZE=%s", workerMachineRootfsSize.String()))
 
-			if clusterTemplate != "" {
-				generateCmd.Args = append(generateCmd.Args, "--from", clusterTemplate)
+			if from != "" {
+				generateCmd.Args = append(generateCmd.Args, "--from", from)
 			} else {
 				generateCmd.Args = append(generateCmd.Args, "--infrastructure", fmt.Sprintf("virtink:%s", VirtinkProviderVersion))
 				if persistent {
@@ -142,21 +142,28 @@ func main() {
 
 			clusterTemplatePatches := map[string][]byte{}
 			if persistent {
+				if controlPlaneMachineRootfsImage == "" {
+					controlPlaneMachineRootfsImage = "smartxworks/capch-rootfs-cdi-1.24.0"
+				}
+				if workerMachineRootfsImage == "" {
+					workerMachineRootfsImage = "smartxworks/capch-rootfs-cdi-1.24.0"
+				}
+
 				generateCmd.Env = append(generateCmd.Env,
-					fmt.Sprintf("VIRTINK_CONTROL_PLANE_MACHINE_ROOTFS_CDI_IMAGE=%s", persistentControlPlaneMachineRootfsImage),
-					fmt.Sprintf("VIRTINK_WORKER_MACHINE_ROOTFS_CDI_IMAGE=%s", persistentWorkerMachineRootfsImage),
-					fmt.Sprintf("VIRTINK_NODE_ADDRESSES=[%v]", strings.Join(persistentMachineAddresses, ",")),
+					fmt.Sprintf("VIRTINK_CONTROL_PLANE_MACHINE_ROOTFS_CDI_IMAGE=%s", controlPlaneMachineRootfsImage),
+					fmt.Sprintf("VIRTINK_WORKER_MACHINE_ROOTFS_CDI_IMAGE=%s", workerMachineRootfsImage),
+					fmt.Sprintf("VIRTINK_NODE_ADDRESSES=[%v]", strings.Join(machineAddresses, ",")),
 				)
 
-				if persistentHostClusterCNI != "" {
+				if hostClusterCNI != "" {
 					var patchFileName string
-					switch persistentHostClusterCNI {
+					switch hostClusterCNI {
 					case "calico":
 						patchFileName = filepath.Join("cluster-template-patches", "calico-static-ip-and-mac.yaml")
 					case "kube-ovn":
 						patchFileName = filepath.Join("cluster-template-patches", "kube-ovn-static-ip-and-mac.yaml")
 					default:
-						return fmt.Errorf("unsupported host cluster CNI: %s", persistentHostClusterCNI)
+						return fmt.Errorf("unsupported host cluster CNI: %s", hostClusterCNI)
 					}
 
 					patchBytes, err := clusterTemplatePatchesFS.ReadFile(patchFileName)
@@ -166,6 +173,19 @@ func main() {
 					clusterTemplatePatches[patchFileName] = patchBytes
 				}
 			} else {
+				if controlPlaneMachineKernelImage == "" {
+					controlPlaneMachineKernelImage = "smartxworks/capch-kernel-5.15.12"
+				}
+				if controlPlaneMachineRootfsImage == "" {
+					controlPlaneMachineRootfsImage = "smartxworks/capch-rootfs-1.24.0"
+				}
+				if workerMachineKernelImage == "" {
+					workerMachineKernelImage = "smartxworks/capch-kernel-5.15.12"
+				}
+				if workerMachineRootfsImage == "" {
+					workerMachineRootfsImage = "smartxworks/capch-rootfs-1.24.0"
+				}
+
 				generateCmd.Env = append(generateCmd.Env,
 					fmt.Sprintf("VIRTINK_CONTROL_PLANE_MACHINE_ROOTFS_IMAGE=%s", controlPlaneMachineRootfsImage),
 					fmt.Sprintf("VIRTINK_WORKER_MACHINE_ROOTFS_IMAGE=%s", workerMachineRootfsImage))
@@ -270,11 +290,9 @@ func main() {
 	cmdCreate.PersistentFlags().StringVar(&workerMachineRootfsImage, "worker-machine-rootfs-image", workerMachineRootfsImage, "The rootfs image of worker machine.")
 	cmdCreate.PersistentFlags().Var(&workerMachineRootfsSize, "worker-machine-rootfs-size", "The rootfs size of each worker machine.")
 	cmdCreate.PersistentFlags().BoolVar(&persistent, "persistent", persistent, "The machines of the nested cluster will be persistent, include persistent storage and IP address.")
-	cmdCreate.PersistentFlags().StringVar(&persistentControlPlaneMachineRootfsImage, "persistent-control-plane-machine-rootfs-image", persistentControlPlaneMachineRootfsImage, "The rootfs image of persisten control plane machine.")
-	cmdCreate.PersistentFlags().StringVar(&persistentWorkerMachineRootfsImage, "persistent-worker-machine-rootfs-image", persistentWorkerMachineRootfsImage, "The rootfs image of persistent worker machine.")
-	cmdCreate.PersistentFlags().StringSliceVar(&persistentMachineAddresses, "persistent-machine-addresses", persistentMachineAddresses, "The candidate IP addresses for persistent machines of nested cluster.")
-	cmdCreate.PersistentFlags().StringVar(&persistentHostClusterCNI, "persistent-host-cluster-cni", persistentHostClusterCNI, "The CNI of the host cluster, support 'calico' and 'kube-ovn'.")
-	cmdCreate.PersistentFlags().StringVar(&clusterTemplate, "cluster-template", clusterTemplate, fmt.Sprintf("The URL of the cluster template to use for the nested cluster. If unspecified, the cluster template of cluster-api-provider-virtink %s will be used.", VirtinkProviderVersion))
+	cmdCreate.PersistentFlags().StringSliceVar(&machineAddresses, "machine-addresses", machineAddresses, "The candidate IP addresses for persistent machines of nested cluster.")
+	cmdCreate.PersistentFlags().StringVar(&hostClusterCNI, "host-cluster-cni", hostClusterCNI, "The CNI of the host cluster, support 'calico' and 'kube-ovn'.")
+	cmdCreate.PersistentFlags().StringVar(&from, "from", from, fmt.Sprintf("The URL of the cluster template to use for the nested cluster. If unspecified, the cluster template of cluster-api-provider-virtink %s will be used.", VirtinkProviderVersion))
 
 	cmdDelete := &cobra.Command{
 		Use:   "delete CLUSTER",
@@ -303,31 +321,28 @@ func main() {
 	}
 
 	cmdScale := &cobra.Command{
-		Use:   "scale CLUSTER CONTROL_PLANE_MACHINE_COUNT:WORKER_MACHINE_COUNT",
-		Args:  cobra.ExactArgs(2),
+		Use:   "scale CLUSTER",
+		Args:  cobra.ExactArgs(1),
 		Short: "Scale a nested cluster.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			counts := strings.Split(args[1], ":")
-			if len(counts) != 2 {
-				return fmt.Errorf("invalid machine counts argument")
-			}
-
-			if counts[0] != "" {
+			if newControlPlaneMachineCount > 0 {
 				if err := runCommand(exec.Command("kubectl", "patch", "kubeadmcontrolplane.controlplane.cluster.x-k8s.io", fmt.Sprintf("%s-cp", args[0]),
-					"--namespace", targetNamespace, "--type", "merge", "--patch", fmt.Sprintf("{\"spec\":{\"replicas\":%s}}", counts[0]))); err != nil {
+					"--namespace", targetNamespace, "--type", "merge", "--patch", fmt.Sprintf("{\"spec\":{\"replicas\":%d}}", newControlPlaneMachineCount))); err != nil {
 					return fmt.Errorf("set control-plane replicas: %s", err)
 				}
 			}
 
-			if counts[1] != "" {
+			if newWorkerMachineCount >= 0 {
 				if err := runCommand(exec.Command("kubectl", "patch", "machinedeployment.cluster.x-k8s.io", fmt.Sprintf("%s-md-0", args[0]),
-					"--namespace", targetNamespace, "--type", "merge", "--patch", fmt.Sprintf("{\"spec\":{\"replicas\":%s}}", counts[1]))); err != nil {
+					"--namespace", targetNamespace, "--type", "merge", "--patch", fmt.Sprintf("{\"spec\":{\"replicas\":%d}}", newWorkerMachineCount))); err != nil {
 					return fmt.Errorf("set worker replicas: %s", err)
 				}
 			}
 			return nil
 		},
 	}
+	cmdScale.PersistentFlags().IntVar(&newControlPlaneMachineCount, "control-plane-machine-count", newControlPlaneMachineCount, "The number of control plane machines for the nested cluster.")
+	cmdScale.PersistentFlags().IntVar(&newWorkerMachineCount, "worker-machine-count", newWorkerMachineCount, "The number of worker machines for the nested cluster.")
 
 	var versionOutput string
 	cmdVersion := &cobra.Command{
