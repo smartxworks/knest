@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"embed"
 	"encoding/base64"
 	"encoding/json"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
@@ -372,6 +374,28 @@ func main() {
 }
 
 func setupClusterctlConfig() error {
+	type repository struct {
+		Name string `yaml:"Name,omitempty"`
+	}
+
+	buf := &bytes.Buffer{}
+	repositoriesCmd := exec.Command("clusterctl", "config", "repositories", "-o", "yaml")
+	repositoriesCmd.Stdout = buf
+	if err := runCommand(repositoriesCmd); err != nil {
+		return err
+	}
+
+	repositories := []repository{}
+	if err := yaml.NewDecoder(buf).Decode(&repositories); err != nil {
+		return err
+	}
+
+	for _, repository := range repositories {
+		if repository.Name == "virtink" {
+			return nil
+		}
+	}
+
 	type provider struct {
 		Name string `json:"name,omitempty"`
 		URL  string `json:"url,omitempty"`
