@@ -22,8 +22,8 @@ import (
 )
 
 const (
-	VirtinkVersion         = "v0.10.1"
-	VirtinkProviderVersion = "v0.4.0"
+	VirtinkVersion         = "v0.12.0"
+	VirtinkProviderVersion = "v0.5.0"
 )
 
 var version string
