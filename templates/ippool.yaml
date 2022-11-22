@@ -1,0 +1,17 @@
+apiVersion: ipam.metal3.io/v1alpha1
+kind: IPPool
+metadata:
+  name: {{ .Name }}
+  namespace: {{ .Namespace }}
+spec:
+  clusterName: {{ .Name }}
+  namePrefix: {{ .Name }}
+  pools:
+  {{ range .Pools -}}
+    {{ if .Start -}}
+  - start: {{ .Start }}
+    end: {{ .End }}
+    {{ else -}}
+  - subnet: {{ .Subnet }}
+    {{ end -}}
+{{ end -}}

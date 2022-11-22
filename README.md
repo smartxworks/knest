@@ -42,7 +42,7 @@ Currently knest directly support host cluster that use 'Calico' or 'Kube-OVN' as
 This is an example to create a workload cluster on a host cluster that use Calico as CNI.
 
 ```bash
-knest create  quickstart-persistent --persistent --persistent-machine-addresses=172.22.127.134,172.22.127.135 --persistent-host-cluster-cni=calico
+knest create  quickstart-persistent --persistent --machine-addresses=172.22.127.100-172.22.127.110 --host-cluster-cni=calico
 ```
 
 for other CNIs, you can download [cluster-template](https://github.com/smartxworks/cluster-api-provider-virtink/tree/main/templates) and modify it firstly, then use `--cluster-template` to use it.
