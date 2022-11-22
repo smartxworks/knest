@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"text/template"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -22,8 +23,9 @@ import (
 )
 
 const (
-	VirtinkVersion         = "v0.12.0"
-	VirtinkProviderVersion = "v0.5.0"
+	VirtinkVersion          = "v0.12.0"
+	VirtinkProviderVersion  = "v0.5.0"
+	IPAddressManagerVersion = "v1.2.1"
 )
 
 var version string
@@ -34,8 +36,8 @@ type Version struct {
 	ClusterAPIProviderVirtink string `json:"cluster-api-provider-virtink"`
 }
 
-//go:embed cluster-template-patches/*
-var clusterTemplatePatchesFS embed.FS
+//go:embed templates/*
+var templatesFS embed.FS
 
 func main() {
 	var (
@@ -85,7 +87,7 @@ func main() {
 
 			virtinkCRDOutput, err := getCommandOutput(exec.Command("kubectl", "get", "crd", "virtualmachines.virt.virtink.smartx.com", "--ignore-not-found"))
 			if err != nil {
-				return fmt.Errorf("get Cluster API CRDs: %s", err)
+				return fmt.Errorf("get Virtink CRDs: %s", err)
 			}
 			if len(virtinkCRDOutput) == 0 {
 				fmt.Println("Installing Virtink")
@@ -96,6 +98,25 @@ func main() {
 				fmt.Println("Waiting for Virtink to be available...")
 				if err := runCommand(exec.Command("kubectl", "wait", "-n", "virtink-system", "deployment", "virt-controller", "--for", "condition=Available", "--timeout", "-1s")); err != nil {
 					return fmt.Errorf("wait for Virtink to be available: %s", err)
+				}
+			}
+
+			ipAddressManagerCRDOutput, err := getCommandOutput(exec.Command("kubectl", "get", "crd", "ippools.ipam.metal3.io", "--ignore-not-found"))
+			if err != nil {
+				return fmt.Errorf("get ip-address-manager CRDs: %s", err)
+			}
+			if len(ipAddressManagerCRDOutput) == 0 {
+				fmt.Println("Installing ip-address-manager")
+				if err := runCommand(exec.Command("kubectl", "create", "namespace", "capm3-system")); err != nil {
+					return fmt.Errorf("create ip-address-manager namespace: %s", err)
+				}
+				if err := runCommand(exec.Command("kubectl", "apply", "-f", fmt.Sprintf("https://github.com/metal3-io/ip-address-manager/releases/download/%s/ipam-components.yaml", IPAddressManagerVersion))); err != nil {
+					return fmt.Errorf("install ip-address-manager: %s", err)
+				}
+
+				fmt.Println("Waiting for ip-address-manager to be available...")
+				if err := runCommand(exec.Command("kubectl", "wait", "-n", "capm3-system", "deployment", "ipam-controller-manager", "--for", "condition=Available", "--timeout", "-1s")); err != nil {
+					return fmt.Errorf("wait for ip-address-manager to be available: %s", err)
 				}
 			}
 
@@ -152,21 +173,68 @@ func main() {
 				generateCmd.Env = append(generateCmd.Env,
 					fmt.Sprintf("VIRTINK_CONTROL_PLANE_MACHINE_ROOTFS_CDI_IMAGE=%s", controlPlaneMachineRootfsImage),
 					fmt.Sprintf("VIRTINK_WORKER_MACHINE_ROOTFS_CDI_IMAGE=%s", workerMachineRootfsImage),
-					fmt.Sprintf("VIRTINK_NODE_ADDRESSES=[%v]", strings.Join(machineAddresses, ",")),
+					fmt.Sprintf("VIRTINK_IP_POOL_NAME=%s", args[0]),
 				)
+
+				if err := runCommand(exec.Command("kubectl", "delete", "ippool.ipam.metal3.io", args[0], "--namespace", targetNamespace, "--wait", "--ignore-not-found")); err != nil {
+					return fmt.Errorf("delete IPPool: %s", err)
+				}
+
+				type ipPoolTemplateDataPool struct {
+					Start  string
+					End    string
+					Subnet string
+				}
+
+				ipPoolTemplateData := struct {
+					Name      string
+					Namespace string
+					Pools     []ipPoolTemplateDataPool
+				}{
+					Name:      args[0],
+					Namespace: targetNamespace,
+				}
+
+				for _, addr := range machineAddresses {
+					if strings.Contains(addr, "-") {
+						items := strings.Split(addr, "-")
+						if len(items) != 2 {
+							return fmt.Errorf("invalid machine address: %s", addr)
+						}
+						ipPoolTemplateData.Pools = append(ipPoolTemplateData.Pools, ipPoolTemplateDataPool{
+							Start: items[0],
+							End:   items[1],
+						})
+					} else {
+						ipPoolTemplateData.Pools = append(ipPoolTemplateData.Pools, ipPoolTemplateDataPool{
+							Subnet: addr,
+						})
+					}
+				}
+
+				ipPoolDataBuf := &bytes.Buffer{}
+				if err := template.Must(template.New("ippool.yaml").ParseFS(templatesFS, "templates/ippool.yaml")).Execute(ipPoolDataBuf, ipPoolTemplateData); err != nil {
+					return err
+				}
+
+				createIPPoolCmd := exec.Command("kubectl", "apply", "-f", "-")
+				createIPPoolCmd.Stdin = ipPoolDataBuf
+				if err := runCommand(createIPPoolCmd); err != nil {
+					return fmt.Errorf("create IPPool: %s", err)
+				}
 
 				if hostClusterCNI != "" {
 					var patchFileName string
 					switch hostClusterCNI {
 					case "calico":
-						patchFileName = filepath.Join("cluster-template-patches", "calico-static-ip-and-mac.yaml")
+						patchFileName = filepath.Join("templates", "calico-static-ip-and-mac-patches.yaml")
 					case "kube-ovn":
-						patchFileName = filepath.Join("cluster-template-patches", "kube-ovn-static-ip-and-mac.yaml")
+						patchFileName = filepath.Join("templates", "kube-ovn-static-ip-and-mac-patches.yaml")
 					default:
 						return fmt.Errorf("unsupported host cluster CNI: %s", hostClusterCNI)
 					}
 
-					patchBytes, err := clusterTemplatePatchesFS.ReadFile(patchFileName)
+					patchBytes, err := templatesFS.ReadFile(patchFileName)
 					if err != nil {
 						return err
 					}
@@ -300,8 +368,12 @@ func main() {
 		Short: "Delete a nested cluster.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clusterName := args[0]
-			if err := runCommand(exec.Command("kubectl", "delete", "clusters.cluster.x-k8s.io", clusterName, "--namespace", targetNamespace, "--wait")); err != nil {
+			if err := runCommand(exec.Command("kubectl", "delete", "clusters.cluster.x-k8s.io", clusterName, "--namespace", targetNamespace, "--wait", "--ignore-not-found")); err != nil {
 				return fmt.Errorf("delete cluster CR: %s", err)
+			}
+
+			if err := runCommand(exec.Command("kubectl", "delete", "ippool.ipam.metal3.io", clusterName, "--namespace", targetNamespace, "--wait", "--ignore-not-found")); err != nil {
+				return fmt.Errorf("delete IPPool CR: %s", err)
 			}
 
 			os.Remove(filepath.Join(homedir.HomeDir(), ".kube", fmt.Sprintf("knest.%s.%s.kubeconfig", targetNamespace, args[0])))
