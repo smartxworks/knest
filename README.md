@@ -28,34 +28,28 @@ knest would automatically install any missing components (Cluster API providers 
 
 > ⚠️ Please be awared that the pod subnet and the service subnet of your nested cluster should not overlap with host cluster's pod subnet, service subnet or physical subnet. Use `--pod-network-cidr` and `--service-cidr` flags to configure nested cluster's pod subnet and service subnet respectively when necessary.
 
-### Create a persistent Nested Kubernetes Cluster
+### Create a Persistent Nested Kubernetes Cluster
 
-You can create a persistent nested Kubernetes cluster, all the Nodes of the cluster have a persistent storage and IP address.
+A persistent nested Kubernetes cluster is a nested cluster that each of its nodes will have a persistent rootfs and a static IP address. To create a persistent nested Kubernetes cluster, the following prerequisites should be met:
 
-Prerequisites
+- Your host cluster should have defined a default StorageClass, knest will use it to create PVC for each nested cluster node.
+- Your host cluster's CNI plugin should support static IP assignment feature for pod, knest will use it to assign static IP for each nested cluster node. Currently knest has built-in static IP assignment support for Calico and Kube-OVN.
 
-- host cluster has a default StorageClass, knest will create PVC for each nested cluster Node to store data on it.
-- host cluster CNI should support specify IP and MAC address for pod, knest will use it to allocate persistent IP and MAC address to Node of nested cluster.
-
-Currently knest directly support host cluster that use 'Calico' or 'Kube-OVN' as CNI.
-
-This is an example to create a workload cluster on a host cluster that use Calico as CNI.
+Below is an example to create a persistent nested cluster:
 
 ```bash
-knest create  quickstart-persistent --persistent --machine-addresses=172.22.127.100-172.22.127.110 --host-cluster-cni=calico
+knest create quickstart-persistent --persistent --machine-addresses=172.22.127.100-172.22.127.110 --host-cluster-cni=calico
 ```
 
-for other CNIs, you can download [cluster-template](https://github.com/smartxworks/cluster-api-provider-virtink/tree/main/templates) and modify it firstly, then use `--cluster-template` to use it.
+For other CNI plugins, you can download the default [cluster template](https://github.com/smartxworks/cluster-api-provider-virtink/tree/main/templates), modify it accordingly, and specify it using the `--cluster-template` flag.
 
 ### Scale the Nested Kubernetes Cluster
 
 You can scale your nested cluster easily as follows:
 
 ```bash
-knest scale quickstart 3:3
+knest scale quickstart --control-plane-machine-count=3 --worker-machine-count=2
 ```
-
-The last argument is in the format of `CONTROL_PLANE_MACHINE_COUNT:WORKER_MACHINE_COUNT`. Leave `CONTROL_PLANE_MACHINE_COUNT` or `WORKER_MACHINE_COUNT` blank if you don't want to change it.
 
 ### Delete the Nested Kubernetes Cluster
 
@@ -78,13 +72,13 @@ Please be noted that this operation would delete all VMs and data of the nested 
 - Currently [Calico](https://projectcalico.docs.tigera.io/getting-started/kubernetes/quickstart) and [Cilium](https://docs.cilium.io/en/stable/gettingstarted/#getting-started-guides) are the only two recommended CNI plugins for nested clusters, due to limited kernel modules was included in the image. Support for more CNI plugins is on the way. And overlay network is required for nested cluster CNI, the supports for CNI and encapsulation mode are as follows:
 
   | CNI    | Encapsulation Mode | Encryption |
-  |--------|--------------------|------------|
+  | ------ | ------------------ | ---------- |
   | Calico | IPIP               | false      |
   | Calico | VXLAN(4789/UDP)    | false      |
   | Cilium | VXLAN(8472/UDP)    | false      |
   | Cilium | Geneve(6081/UDP)   | false      |
 
-- The underlying network and firewalls must allow encapsulated packets. For example, if host cluster uses Calico as CNI plugin, the IPIP and VXLAN(4789/UDP) encapsulated packets from nested cluster will be `DROP` by default. See [Configuring Felix](https://projectcalico.docs.tigera.io/reference/felix/configuration) to allow IPIP and VXLAN(4789/UDP) packets from workloads. 
+- The underlying network and firewalls must allow encapsulated packets. For example, if host cluster uses Calico as CNI plugin, the IPIP and VXLAN(4789/UDP) encapsulated packets from nested cluster will be `DROP` by default. See [Configuring Felix](https://projectcalico.docs.tigera.io/reference/felix/configuration) to allow IPIP and VXLAN(4789/UDP) packets from workloads.
 
 ## License
 
