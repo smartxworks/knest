@@ -26,6 +26,7 @@ const (
 	VirtinkVersion          = "v0.13.0"
 	VirtinkProviderVersion  = "v0.6.0"
 	IPAddressManagerVersion = "v1.2.1"
+	CDIVersion              = "v1.55.2"
 )
 
 var version string
@@ -98,6 +99,25 @@ func main() {
 				fmt.Println("Waiting for Virtink to be available...")
 				if err := runCommand(exec.Command("kubectl", "wait", "-n", "virtink-system", "deployment", "virt-controller", "--for", "condition=Available", "--timeout", "-1s")); err != nil {
 					return fmt.Errorf("wait for Virtink to be available: %s", err)
+				}
+			}
+
+			cdiCRDOutput, err := getCommandOutput(exec.Command("kubectl", "get", "crd", "datavolumes.cdi.kubevirt.io", "--ignore-not-found"))
+			if err != nil {
+				return fmt.Errorf("get CDI CRDs: %s", err)
+			}
+			if len(cdiCRDOutput) == 0 {
+				fmt.Println("Installing CDI")
+				if err := runCommand(exec.Command("kubectl", "apply", "-f", fmt.Sprintf("https://github.com/kubevirt/containerized-data-importer/releases/download/%s/cdi-operator.yaml", CDIVersion))); err != nil {
+					return fmt.Errorf("install CDI operator: %s", err)
+				}
+				if err := runCommand(exec.Command("kubectl", "apply", "-f", fmt.Sprintf("https://github.com/kubevirt/containerized-data-importer/releases/download/%s/cdi-cr.yaml", CDIVersion))); err != nil {
+					return fmt.Errorf("install CDI: %s", err)
+				}
+
+				fmt.Println("Waiting for CDI to be available...")
+				if err := runCommand(exec.Command("kubectl", "wait", "cdi", "cdi", "--for", "condition=Available", "--timeout", "-1s")); err != nil {
+					return fmt.Errorf("wait for CDI to be available: %s", err)
 				}
 			}
 
