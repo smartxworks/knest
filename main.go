@@ -23,8 +23,8 @@ import (
 )
 
 const (
-	VirtinkVersion          = "v0.13.0"
-	VirtinkProviderVersion  = "v0.6.0"
+	VirtinkVersion          = "v0.15.0"
+	VirtinkProviderVersion  = "v0.7.0"
 	IPAddressManagerVersion = "v1.2.1"
 	CDIVersion              = "v1.55.2"
 )
